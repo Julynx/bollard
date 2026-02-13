@@ -1,5 +1,3 @@
-from tqdm import tqdm
-
 from bollard import DockerClient
 
 
@@ -21,8 +19,9 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
     image = "alpine:latest"
     # Ensure image
     try:
-        for _ in tqdm(docker_client.pull_image(image)):
-            pass
+        print("Pulling image...")
+        docker_client.pull_image(image)
+        print("Image pulled.")
     except Exception:
         pass
 
@@ -36,6 +35,7 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
     # OR use the python image if originally intended, but might be slow.
     # Let's try alpine with sleep for env/vol first.
 
+    print("Creating container...")
     with docker_client.container(
         image,
         command="sleep 60",
@@ -43,13 +43,19 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
         volumes={str(vol_file): container_path},
         ports={8000: 8081},  # 8000 in container -> 8081 on host
     ) as container:
+        print("Container created.")
+
         # 1. Verify Env
+        print("Verifying env...")
         out = container.exec(["env"])
         assert "TEST_VAR=bollard_works" in out
+        print("Env verified.")
 
         # 2. Verify Volume
+        print("Verifying volume...")
         out = container.exec(["cat", container_path])
         assert "from_host" in out.strip()
+        print("Volume verified.")
 
         # 3. Verify Ports (Optional / Harder with sleep)
         # We can inspect the container to see if ports are populated in settings

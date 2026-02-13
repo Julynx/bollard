@@ -2,7 +2,6 @@ import os
 import time
 
 import pytest
-from tqdm import tqdm
 
 from bollard import DockerClient
 
@@ -17,7 +16,7 @@ def test_stirling_pdf_conversion(docker_client: DockerClient):
     # Ensure image is pulled (this might take a while the first time)
     # Most environments would pre-pull this or have it cached.
     try:
-        for _ in tqdm(docker_client.pull_image(image)):
+        for _ in docker_client.pull_image(image):
             pass
     except Exception:
         pytest.skip(f"Could not pull {image}, skipping integration test")

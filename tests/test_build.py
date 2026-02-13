@@ -1,5 +1,3 @@
-from tqdm import tqdm
-
 from bollard import DockerClient
 
 
@@ -18,13 +16,23 @@ def test_build_image(docker_client: DockerClient, random_name: str, tmp_path) ->
         # Assuming build_image takes path and tag
         # The library likely needs string path, not Path object if strictly typed without support
 
-        for _ in tqdm(docker_client.build_image(str(tmp_path), image_tag)):
-            pass
+        # Consuming default call (returns Image now)
+        docker_client.build_image(str(tmp_path), image_tag)
 
         # Verify image exists
         images = docker_client.list_images()
-        found = any(any(image_tag in tag for tag in img.tags) for img in images)
-        assert found, "Built image should exist"
+        found = False
+        for img in images:
+            for tag in img.tags:
+                # Docker might prepend docker.io/library/
+                if tag.endswith(image_tag) or image_tag in tag:
+                    found = True
+                    break
+            if found:
+                break
+        assert found, (
+            f"Built image {image_tag} should exist. Found: {[i.tags for i in images]}"
+        )
 
     finally:
         try:

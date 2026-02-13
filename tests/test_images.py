@@ -1,5 +1,3 @@
-from tqdm import tqdm
-
 from bollard import DockerClient
 
 
@@ -21,9 +19,8 @@ def test_pull_image(docker_client: DockerClient) -> None:
     # Using busybox as a small alternative to alpine to test pull
     image_name = "busybox:latest"
     try:
-        # Consume generator
-        for _ in tqdm(docker_client.pull_image(image_name)):
-            pass
+        # Consume generator - NOW RETURNS IMAGE
+        docker_client.pull_image(image_name)
 
         # Verify it exists
         images = docker_client.list_images()

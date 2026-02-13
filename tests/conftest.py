@@ -2,7 +2,6 @@ import uuid
 from typing import Generator
 
 import pytest
-from tqdm import tqdm
 
 from bollard import DockerClient
 
@@ -31,8 +30,7 @@ def alpine_image(docker_client: DockerClient) -> str:
     # For speed in repeated local tests, maybe check first?
     # But pull ensures latest. Let's pull but ignore output for now or log it.
     try:
-        for _ in tqdm(docker_client.pull_image(image)):
-            pass
+        docker_client.pull_image(image)
     except Exception:
         # If pull fails (e.g. offline), we hope it exists.
         # In a real CI, we'd want to fail or require network.

@@ -20,7 +20,6 @@ Prioritizes descriptive naming, context managers, and cross-platform ease of use
 ```python
 from bollard import DockerClient
 
-# Auto-detects socket/pipe
 with DockerClient() as client:
     for image in client.list_images():
         print(f"Image: {image.tags[0]}")
@@ -30,12 +29,10 @@ with DockerClient() as client:
 
 ```python
 with DockerClient() as client:
-    # Run a container
+    # Run a container and get logs
     container = client.run_container("alpine:latest", command="echo 'Hello World'")
-    
-    # Get logs
     print(container.logs())
-    
+
     # Stop and remove
     container.stop()
     container.remove(force=True)
@@ -49,7 +46,7 @@ Use `ephemeral_container` to automatically remove the container after the block 
 with DockerClient() as client:
     with client.ephemeral_container("alpine", command="sleep 60") as container:
         container.exec(["echo", "Running inside container"])
-    # Container is automatically removed here
+    # Container is automatically removed
 ```
 
 ### Streaming Image Operations
@@ -105,33 +102,30 @@ with DockerClient() as client:
 This example demonstrates running a Stirling-PDF container to convert a "Hello World" HTML file into a PDF and then retrieving it.
 
 ```python
-import time
 from bollard import DockerClient
+from time import sleep
 
-with DockerClient() as client:
-    # Disable authentication for local testing
-    env = {"SECURITY_ENABLE_LOGIN": "false"}
-    
-    with client.container("frooodle/s-pdf", environment=env) as container:
-        # Wait for service to be ready (port 8080)
-        for _ in range(30):
-            if "HTTP" in container.exec("curl -s -I http://localhost:8080"):
-                break
-            time.sleep(1)
+env = {"SECURITY_ENABLE_LOGIN": "false"}
 
-        # Create dummy HTML inside container
-        container.exec("sh -c 'echo \"<h1>Hello World</h1>\" > /index.html'")
+with DockerClient() as docker:
+    with docker.container("frooodle/s-pdf", environment=env) as container:
+        # Wait for the container to be ready
+        res = ""
+        while "HTTP" not in res:
+            res = container.exec("curl -s -I http://localhost:8080")
+            sleep(1)
 
-        # Convert HTML to PDF via API
-        container.exec(
-            "curl -s "
-            "-F 'fileInput=@/index.html' "
+        # Convert the HTML to PDF
+        container.exec("sh -c 'echo \"<h1>Test PDF</h1>\" > /test.html'")
+        result = container.exec(
+            'curl -s -w "%{http_code}" '
+            "-F 'fileInput=@/test.html' "
             "http://localhost:8080/api/v1/convert/html/pdf "
-            "-o /output.pdf"
+            "-o /test.pdf"
         )
 
-        # Copy the result back to host
-        container.copy_from("/output.pdf", ".")
+        # Copy the PDF to the host
+        container.copy_from("/test.pdf", ".")
 ```
 
 ### Kubernetes YAML Support

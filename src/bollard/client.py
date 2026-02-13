@@ -6,20 +6,15 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any, Generator
+from typing import Any, Generator, Literal, overload
 
 from .const import DEFAULT_TIMEOUT
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 from .transport import UnixHttpConnection
 
-# Configure logging to INFO
+# Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
 
 class DockerClient:
@@ -161,10 +156,32 @@ class DockerClient:
         headers["Connection"] = "close"
 
         try:
-            logger.debug("%s %s", method, endpoint)
+            logger.debug(
+                "Request: %s %s\nHeaders: %s\nBody: %s",
+                method,
+                endpoint,
+                headers,
+                (
+                    json_body[:500] + "..."
+                    if json_body and len(json_body) > 500
+                    else json_body
+                ),
+            )
+            start_time = time.time()
             conn.request(method, endpoint, body=json_body, headers=headers)
             response = conn.getresponse()
+            duration = time.time() - start_time
+
             data = response.read().decode("utf-8")
+
+            logger.debug(
+                "Response: %s %s (%.3fs)\nHeaders: %s\nBody: %s",
+                response.status,
+                response.reason,
+                duration,
+                dict(response.getheaders()),
+                data[:500] + "..." if len(data) > 500 else data,
+            )
 
             if response.status < 400:
                 if response.getheader("Content-Type") == "application/json":
@@ -265,11 +282,23 @@ class DockerClient:
         """
         return Container(self, {"Id": container_id}).kill(signal=signal)
 
-    def pull_image(self, image_name: str) -> Generator[dict[str, Any], None, None]:
+    @overload
+    def pull_image(
+        self, image_name: str, progress: Literal[True]
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @overload
+    def pull_image(
+        self, image_name: str, progress: Literal[False] = False
+    ) -> Image: ...
+
+    def pull_image(
+        self, image_name: str, progress: bool = False
+    ) -> Generator[dict[str, Any], None, None] | Image:
         """
         Pull an image.
         """
-        yield from Image.pull(self, image_name)
+        return Image.pull(self, image_name, progress=progress)
 
     def list_images(self, show_all: bool = False) -> list[Image]:
         """
@@ -277,11 +306,23 @@ class DockerClient:
         """
         return Image.list(self, show_all=show_all)
 
-    def build_image(self, path: str, tag: str) -> Generator[dict[str, Any], None, None]:
+    @overload
+    def build_image(
+        self, path: str, tag: str, progress: Literal[True]
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @overload
+    def build_image(
+        self, path: str, tag: str, progress: Literal[False] = False
+    ) -> Image: ...
+
+    def build_image(
+        self, path: str, tag: str, progress: bool = False
+    ) -> Generator[dict[str, Any], None, None] | Image:
         """
         Build an image from a directory.
         """
-        yield from Image.build(self, path, tag)
+        return Image.build(self, path, tag, progress=progress)
 
     def remove_image(self, image: str, force: bool = False) -> Any:
         """
@@ -461,13 +502,34 @@ class DockerClient:
             logger.warning("Failed to load Docker config from %s", config_path)
             return {}
 
+    @overload
     def push_image(
         self,
         image: str,
         tag: str | None = None,
         auth_config: dict[str, str] | None = None,
-    ) -> Generator[dict[str, Any], None, None]:
+        progress: Literal[True] = ...,
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @overload
+    def push_image(
+        self,
+        image: str,
+        tag: str | None = None,
+        auth_config: dict[str, str] | None = None,
+        progress: Literal[False] = False,
+    ) -> list[dict[str, Any]]: ...
+
+    def push_image(
+        self,
+        image: str,
+        tag: str | None = None,
+        auth_config: dict[str, str] | None = None,
+        progress: bool = False,
+    ) -> Generator[dict[str, Any], None, None] | list[dict[str, Any]]:
         """
         Push an image.
         """
-        return Image(self, {"Id": image}).push(tag=tag, auth_config=auth_config)
+        return Image(self, {"Id": image}).push(
+            tag=tag, auth_config=auth_config, progress=progress
+        )

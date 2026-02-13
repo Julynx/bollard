@@ -17,10 +17,17 @@ class NpipeSocket:
     def connect(self, address: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         """Connect to the named pipe at the given address."""
         start_time = time.time()
+        # Local import to avoid circular dependency
+        import logging
+
+        logger = logging.getLogger("bollard.transport")
+
+        logger.debug("Attempting to connect to named pipe: %s", address)
         while True:
             try:
                 file_descriptor = os.open(address, os.O_RDWR | os.O_BINARY)
                 self._handle = os.fdopen(file_descriptor, "r+b", buffering=0)
+                logger.debug("Successfully connected to named pipe: %s", address)
                 break
 
             except FileNotFoundError:
@@ -73,6 +80,11 @@ class UnixHttpConnection(http.client.HTTPConnection):
         self.socket_path = socket_path
 
     def connect(self) -> None:
+        import logging
+
+        logger = logging.getLogger("bollard.transport")
+
+        logger.debug("Connecting to socket path: %s", self.socket_path)
         if hasattr(socket, "AF_UNIX"):
             self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.sock.connect(self.socket_path)

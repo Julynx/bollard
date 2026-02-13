@@ -4,7 +4,7 @@ import json
 import logging
 import tarfile
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Generator, List
+from typing import TYPE_CHECKING, Any, Generator, List, Literal, overload
 
 from .docker_resource import DockerResource
 from .transport import UnixHttpConnection
@@ -30,36 +30,85 @@ class Image(DockerResource):
         return [cls(client, image_data) for image_data in data]
 
     @classmethod
+    @overload
     def pull(
-        cls, client: "DockerClient", image_name: str
-    ) -> Generator[dict[str, Any], None, None]:
+        cls, client: "DockerClient", image_name: str, progress: Literal[True]
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @classmethod
+    @overload
+    def pull(
+        cls, client: "DockerClient", image_name: str, progress: Literal[False] = False
+    ) -> "Image": ...
+
+    @classmethod
+    def pull(
+        cls, client: "DockerClient", image_name: str, progress: bool = False
+    ) -> Generator[dict[str, Any], None, None] | "Image":
         """
         Pull an image.
         Equivalent to: docker pull
 
-        Yields:
-            dict: Progress objects from Docker
+        Args:
+            client: The DockerClient instance.
+            image_name: The name of the image to pull.
+            progress: If True, yields progress objects. If False (default),
+                      displays a progress bar and returns the Image object.
+
+        Returns:
+            Image object (if progress=False) or Generator (if progress=True)
         """
         logger.info("Pulling %s...", image_name)
 
         conn = UnixHttpConnection(client.socket_path)
-        # Note: We manually handle the connection here to use our stream helper
-        # Instead of client._request which reads the whole body
         conn.request("POST", f"/images/create?fromImage={image_name}")
         response = conn.getresponse()
 
-        yield from client._stream_json_response(response)
+        generator = client._stream_json_response(response)
+
+        if progress:
+            return generator
+
+        from .progress import DockerProgress
+
+        DockerProgress(generator).consume()
+
+        # Return the Image object. We might need to inspect to get ID, or just trust name.
+        # Docker pull doesn't easily give the final ID in the stream, but list/inspect does.
+        # We can try to fetch it.
+        # If we just use the name, it lazy loads.
+        return cls(client, {"Id": image_name})
+
+    @classmethod
+    @overload
+    def build(
+        cls, client: "DockerClient", path: str, tag: str, progress: Literal[True]
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @classmethod
+    @overload
+    def build(
+        cls,
+        client: "DockerClient",
+        path: str,
+        tag: str,
+        progress: Literal[False] = False,
+    ) -> "Image": ...
 
     @classmethod
     def build(
-        cls, client: "DockerClient", path: str, tag: str
-    ) -> Generator[dict[str, Any], None, None]:
+        cls, client: "DockerClient", path: str, tag: str, progress: bool = False
+    ) -> Generator[dict[str, Any], None, None] | "Image":
         """
         Build an image from a directory.
         Equivalent to: docker build -t tag path
 
-        Yields:
-            dict: Build progress objects
+        Args:
+            client: The DockerClient instance.
+            path: Path to the directory containing Dockerfile.
+            tag: Tag to apply to the built image.
+            progress: If True, yields progress objects. If False (default),
+                      displays a progress bar and returns the Image object.
         """
         logger.info("Building image %s from %s...", tag, path)
 
@@ -83,7 +132,23 @@ class Image(DockerResource):
         )
         response = conn.getresponse()
 
-        yield from client._stream_json_response(response)
+        generator = client._stream_json_response(response)
+
+        if progress:
+            return generator
+
+        from .progress import DockerProgress
+
+        events = DockerProgress(generator).consume()
+
+        # Try to find the image ID from the last 'aux' event
+        image_id = tag
+        for event in reversed(events):
+            if "aux" in event and "ID" in event["aux"]:
+                image_id = event["aux"]["ID"]
+                break
+
+        return cls(client, {"Id": image_id, "RepoTags": [tag]})
 
     @property
     def tags(self) -> List[str]:
@@ -99,44 +164,54 @@ class Image(DockerResource):
         query = urllib.parse.urlencode(params)
         self.client._request("DELETE", f"/images/{self.resource_id}?{query}")
 
+    @overload
     def push(
-        self, tag: str | None = None, auth_config: dict[str, str] | None = None
-    ) -> Generator[dict[str, Any], None, None]:
+        self,
+        tag: str | None = None,
+        auth_config: dict[str, str] | None = None,
+        progress: Literal[True] = ...,
+    ) -> Generator[dict[str, Any], None, None]: ...
+
+    @overload
+    def push(
+        self,
+        tag: str | None = None,
+        auth_config: dict[str, str] | None = None,
+        progress: Literal[False] = False,
+    ) -> List[dict[str, Any]]: ...
+
+    def push(
+        self,
+        tag: str | None = None,
+        auth_config: dict[str, str] | None = None,
+        progress: bool = False,
+    ) -> Generator[dict[str, Any], None, None] | List[dict[str, Any]]:
         """
         Push an image.
         Equivalent to: docker push
+
+        Args:
+            tag: Optional tag to push.
+            auth_config: Optional authentication config.
+            progress: If True, yields progress objects. If False (default),
+                      displays a progress bar and returns the list of events.
         """
-        # If tag is none, use first tag? Or raise error?
         image_name = tag or (self.tags[0] if self.tags else self.resource_id)
 
-        # If the user passed a tag to push() intended as the image name to push
-        # we need to be careful. The original implementation split by colon.
-        # But here we are calling push on an Image object.
-        # The original `push` method on `Image` called `client.push_image`.
-        # `client.push_image` took `image` (string).
-
-        # Logic from client.push_image:
         if tag and ":" not in image_name:
-            # Since image_name was set to tag if tag was present...
-            # The original client.push_image(image, tag) logic:
-            # if tag: image = f"{image}:{tag}"
+            # Logic handled in _push_image_logic/client side usually but here we reconstruct
             pass
 
-        # Actually I should implement the logic from client.push_image here.
-        # The logic below is adapted.
-
-        target_image = image_name
-
-        # Re-implementing client.push_image logic
-        # Note: client.push_image(image: str, tag: str | None)
-        # If I call image.push(tag="latest"), does it mean push this image as "latest"?
-        # Or push the tag "latest" of this image?
-        # The Models.py Image.push implementation was:
-        # yield from self.client.push_image(repo, tag=tag_part) if ":" in image_name
-
-        return self._push_image_logic(
-            self.client, target_image, auth_config=auth_config
+        generator = self._push_image_logic(
+            self.client, image_name, auth_config=auth_config
         )
+
+        if progress:
+            return generator
+
+        from .progress import DockerProgress
+
+        return DockerProgress(generator).consume()
 
     @classmethod
     def _push_image_logic(
