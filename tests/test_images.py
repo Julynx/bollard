@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from bollard import DockerClient
 
 
@@ -20,7 +22,7 @@ def test_pull_image(docker_client: DockerClient) -> None:
     image_name = "busybox:latest"
     try:
         # Consume generator
-        for _ in docker_client.pull_image(image_name):
+        for _ in tqdm(docker_client.pull_image(image_name)):
             pass
 
         # Verify it exists

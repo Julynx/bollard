@@ -100,6 +100,40 @@ with DockerClient() as client:
         container.copy_from("/src/path/data.txt", "local_output/")
 ```
 
+### Real-world Example: Stirling-PDF Conversion
+
+This example demonstrates running a Stirling-PDF container to convert a "Hello World" HTML file into a PDF and then retrieving it.
+
+```python
+import time
+from bollard import DockerClient
+
+with DockerClient() as client:
+    # Disable authentication for local testing
+    env = {"SECURITY_ENABLE_LOGIN": "false"}
+    
+    with client.container("frooodle/s-pdf", environment=env) as container:
+        # Wait for service to be ready (port 8080)
+        for _ in range(30):
+            if "HTTP" in container.exec("curl -s -I http://localhost:8080"):
+                break
+            time.sleep(1)
+
+        # Create dummy HTML inside container
+        container.exec("sh -c 'echo \"<h1>Hello World</h1>\" > /index.html'")
+
+        # Convert HTML to PDF via API
+        container.exec(
+            "curl -s "
+            "-F 'fileInput=@/index.html' "
+            "http://localhost:8080/api/v1/convert/html/pdf "
+            "-o /output.pdf"
+        )
+
+        # Copy the result back to host
+        container.copy_from("/output.pdf", ".")
+```
+
 ### Kubernetes YAML Support
 
 Execute Kubernetes YAML files directly using Podman's native `play kube` feature.

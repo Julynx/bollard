@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from bollard import DockerClient
 
 
@@ -15,9 +17,9 @@ def test_build_image(docker_client: DockerClient, random_name: str, tmp_path) ->
     try:
         # Assuming build_image takes path and tag
         # The library likely needs string path, not Path object if strictly typed without support
-        build_gen = docker_client.build_image(str(tmp_path), image_tag)
-        for chunk in build_gen:
-            pass  # Consume output
+
+        for _ in tqdm(docker_client.build_image(str(tmp_path), image_tag)):
+            pass
 
         # Verify image exists
         images = docker_client.list_images()

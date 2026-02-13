@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List
 
 from .docker_resource import DockerResource
 
@@ -13,7 +13,7 @@ class Network(DockerResource):
     """A Docker network."""
 
     @classmethod
-    def list(cls, client: "DockerClient") -> list["Network"]:
+    def list(cls, client: "DockerClient") -> List["Network"]:
         """
         List networks.
         Equivalent to: docker network ls

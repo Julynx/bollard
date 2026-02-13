@@ -4,7 +4,7 @@ import json
 import logging
 import tarfile
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any, Generator, List
 
 from .docker_resource import DockerResource
 from .transport import UnixHttpConnection
@@ -19,7 +19,7 @@ class Image(DockerResource):
     """A Docker image."""
 
     @classmethod
-    def list(cls, client: "DockerClient", show_all: bool = False) -> list["Image"]:
+    def list(cls, client: "DockerClient", show_all: bool = False) -> List["Image"]:
         """
         List images.
         Equivalent to: docker images
@@ -86,7 +86,7 @@ class Image(DockerResource):
         yield from client._stream_json_response(response)
 
     @property
-    def tags(self) -> list[str]:
+    def tags(self) -> List[str]:
         return self.attrs.get("RepoTags") or []
 
     def remove(self, force: bool = False) -> None:

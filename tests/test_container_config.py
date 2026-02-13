@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from bollard import DockerClient
 
 
@@ -19,7 +21,8 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
     image = "alpine:latest"
     # Ensure image
     try:
-        list(docker_client.pull_image(image))
+        for _ in tqdm(docker_client.pull_image(image)):
+            pass
     except Exception:
         pass
 

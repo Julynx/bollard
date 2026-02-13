@@ -6,7 +6,7 @@ import logging
 import shlex
 import tarfile
 import urllib.parse
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List
 
 from .const import DEFAULT_KILL_SIGNAL, DEFAULT_TIMEOUT
 from .docker_resource import DockerResource
@@ -23,7 +23,7 @@ class Container(DockerResource):
     """A Docker container."""
 
     @classmethod
-    def list(cls, client: "DockerClient", show_all: bool = False) -> list["Container"]:
+    def list(cls, client: "DockerClient", show_all: bool = False) -> List["Container"]:
         """
         List containers.
         Equivalent to: docker ps
@@ -39,7 +39,7 @@ class Container(DockerResource):
         cls,
         client: "DockerClient",
         image: str,
-        command: str | list[str] | None = None,
+        command: str | List[str] | None = None,
         name: str | None = None,
         # Default behavior: Keep stdin open and allocate a pseudo-TTY.
         # This prevents shell containers (alpine, ubuntu) from exiting immediately.
@@ -270,7 +270,7 @@ class Container(DockerResource):
             conn.close()
 
     def exec(
-        self, command: str | list[str], detach: bool = False, tty: bool = False
+        self, command: str | List[str], detach: bool = False, tty: bool = False
     ) -> str:
         """
         Execute a command in a running container.

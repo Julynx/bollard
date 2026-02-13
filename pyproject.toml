@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "A Pythonic client for the Docker/Podman Engine API."
 readme = "docs/README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "tqdm>=4.67.3",
+]
 
 [dependency-groups]
 dev = [

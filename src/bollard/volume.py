@@ -1,6 +1,6 @@
 import logging
 import urllib.parse
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List
 
 from .docker_resource import DockerResource
 
@@ -14,7 +14,7 @@ class Volume(DockerResource):
     """A Docker volume."""
 
     @classmethod
-    def list(cls, client: "DockerClient") -> list["Volume"]:
+    def list(cls, client: "DockerClient") -> List["Volume"]:
         """
         List volumes.
         Equivalent to: docker volume ls
