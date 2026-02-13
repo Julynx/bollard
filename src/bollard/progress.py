@@ -16,7 +16,8 @@ class DockerProgress:
 
     def consume(self) -> List[Dict[str, Any]]:
         """
-        Consumes the generator, updates current progress to stdout, and returns the collected events.
+        Consumes the generator, updates current progress to stdout,
+        and returns the collected events.
         """
         events: List[Dict[str, Any]] = []
         try:
@@ -35,7 +36,8 @@ class DockerProgress:
         """
         # Handle "stream" (e.g., from build output)
         if "stream" in event:
-            # logger.info adds a newline, so we might want to strip one from the stream if present
+            # logger.info adds a newline, so we might want
+            # to strip one from the stream if present
             # so we don't double-space log output.
             msg = event["stream"].rstrip()
             if msg:

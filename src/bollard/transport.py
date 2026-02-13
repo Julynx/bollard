@@ -32,11 +32,11 @@ class NpipeSocket:
 
             except FileNotFoundError:
                 raise
-            except OSError:
+            except OSError as os_error:
                 if time.time() - start_time > timeout:
                     raise TimeoutError(
                         f"Timed out connecting to {address} after {timeout}s"
-                    )
+                    ) from os_error
                 time.sleep(0.1)
 
     def sendall(self, data: bytes) -> None:

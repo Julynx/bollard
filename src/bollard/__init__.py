@@ -1,3 +1,7 @@
+"""
+API for Docker Engine
+"""
+
 from .client import DockerClient
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume

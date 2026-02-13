@@ -81,5 +81,5 @@ The `client.container()` context manager ensures cleanup:
 
 ## Testing Strategy (`tests/`)
 
-- **Integration Tests**: The primary test suite (`tests/conftest.py`) requires a running Docker/Podman engine. It spins up real containers to verify behavior.
+- **Integration Tests**: The primary test suite (`tests/`) requires a running Docker/Podman engine. It spins up real containers to verify behavior.
 - **Fixtures**: `docker_client` fixture handles connection setup/teardown for each test.

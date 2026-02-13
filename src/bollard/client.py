@@ -1,3 +1,7 @@
+"""
+Client module. Provides functionality for the Docker/Podman Engine API.
+"""
+
 import contextlib
 import http.client
 import json
@@ -110,11 +114,12 @@ class DockerClient:
         self, image: str, command: str | list[str] | None = None, **kwargs: Any
     ) -> Generator[Container, None, None]:
         """
-        Context manager to run a container and ensure it is removed (or stopped) on exit.
+        Context manager to run a container and ensure it is removed
+        (or stopped) on exit.
 
         Usage:
             with client.container("alpine", "echo hello") as container:
-                print(container.logs())
+                logs = container.logs()
         """
         container = self.run_container(image, command=command, **kwargs)
         try:

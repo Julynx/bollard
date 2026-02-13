@@ -133,8 +133,7 @@ class Container(DockerResource):
                 # client methods might be refactored, so safer to use Image.pull
                 from .image import Image
 
-                for _ in Image.pull(client, image):
-                    pass
+                Image.pull(client, image)
                 logger.info("Image pulled successfully. Retrying container creation...")
                 create_res = client._request("POST", endpoint, body=payload)
             else:

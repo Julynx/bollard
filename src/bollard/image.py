@@ -73,8 +73,10 @@ class Image(DockerResource):
 
         DockerProgress(generator).consume()
 
-        # Return the Image object. We might need to inspect to get ID, or just trust name.
-        # Docker pull doesn't easily give the final ID in the stream, but list/inspect does.
+        # Return the Image object. We might need to inspect to get ID,
+        # or just trust name.
+        # Docker pull doesn't easily give the final ID in the stream,
+        # but list/inspect does.
         # We can try to fetch it.
         # If we just use the name, it lazy loads.
         return cls(client, {"Id": image_name})
@@ -199,7 +201,8 @@ class Image(DockerResource):
         image_name = tag or (self.tags[0] if self.tags else self.resource_id)
 
         if tag and ":" not in image_name:
-            # Logic handled in _push_image_logic/client side usually but here we reconstruct
+            # Logic handled in _push_image_logic/client side
+            # usually but here we reconstruct
             pass
 
         generator = self._push_image_logic(
