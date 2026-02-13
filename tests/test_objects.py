@@ -1,8 +1,9 @@
 import sys
 
 sys.path.append(".")
-from bollard import DockerClient
 import time
+
+from bollard import DockerClient, container
 
 with DockerClient() as client:
     for progress in client.pull_image("alpine:latest"):

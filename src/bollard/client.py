@@ -13,9 +13,9 @@ import time
 import urllib.parse
 from typing import Any, Generator
 
-from .transport import UnixHttpConnection
-from .models import Container, Image, Network, Volume
 from .exceptions import DockerException
+from .models import Container, Image, Network, Volume
+from .transport import UnixHttpConnection
 
 logger = logging.getLogger(__name__)
 
@@ -222,26 +222,32 @@ class DockerClient:
         image: str,
         command: str | list[str] | None = None,
         name: str | None = None,
+        # Default behavior: Keep stdin open and allocate a pseudo-TTY.
+        # This prevents shell containers (alpine, ubuntu) from exiting immediately.
+        detach: bool = True,
+        tty: bool = True,
+        stdin_open: bool = True,
+        **kwargs: Any,
     ) -> Container:
         """
         Create and start a container.
-        Equivalent to: docker run -d (detached)
-
-        Args:
-            image (str): Name of the image to run
-            command (str or list): Command to run. If str, it gets split via shlex.
-            name (str, optional): Name for the container
-
-        Returns:
-            Container: The started container object
+        Defaults to -itd (Interactive, TTY, Detached) behavior.
         """
         logger.info("Creating container for image '%s'...", image)
-        payload: dict[str, Any] = {"Image": image}
+
+        payload: dict[str, Any] = {
+            "Image": image,
+            "Tty": tty,
+            "OpenStdin": stdin_open,
+        }
+
         if command:
             if isinstance(command, str):
                 payload["Cmd"] = shlex.split(command)
             else:
                 payload["Cmd"] = command
+
+        payload.update(kwargs)
 
         endpoint = "/containers/create"
         if name:
@@ -253,10 +259,13 @@ class DockerClient:
         logger.info("Starting container %s...", container_id[:12])
         self._request("POST", f"/containers/{container_id}/start")
 
-        # In a full impl, we'd inspect here to get full attrs, but for now we just return partial
         return Container(
             self,
-            {"Id": container_id, "Image": image, "Names": [f"/{name}"] if name else []},
+            {
+                "Id": container_id,
+                "Image": image,
+                "Names": [f"/{name}"] if name else [],
+            },
         )
 
     def stop_container(self, container_id: str, timeout: int = 10) -> Any:
@@ -526,8 +535,6 @@ class DockerClient:
         logger.info("Creating volume %s (driver=%s)...", name, driver)
         payload = {"Name": name, "Driver": driver, **kwargs}
         res = self._request("POST", "/volumes/create", body=payload)
-        # created volume object is returned fully? No, usually just Name/Driver etc.
-        # But wait, volume create returns the Volume object in API.
         return Volume(self, res)
 
     def remove_volume(self, name: str, force: bool = False) -> None:
