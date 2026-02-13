@@ -99,3 +99,16 @@ with DockerClient() as client:
         # Copy container -> host
         container.copy_from("/src/path/data.txt", "local_output/")
 ```
+
+### Kubernetes YAML Support
+
+Execute Kubernetes YAML files directly using Podman's native `play kube` feature.
+
+```python
+with DockerClient() as client:
+    # Requires a valid Kubernetes YAML file (Pod, Deployment, etc.)
+    result = client.play_kube("pod.yaml")
+    
+    # Returns the JSON response from Podman describing created resources
+    print("Created Pods:", result.get("Pods"))
+```

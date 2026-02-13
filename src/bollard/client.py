@@ -474,13 +474,36 @@ class DockerClient:
         logger.info("Starting container %s...", container_id[:12])
         return self._request("POST", f"/containers/{container_id}/start")
 
-    def restart_container(self, container_id: str, timeout: int = 10) -> Any:
+    def restart_container(self, container_id: str, timeout: int = 10) -> None:
         """
         Restart a container.
         Equivalent to: docker restart
         """
         logger.info("Restarting container %s...", container_id[:12])
-        return self._request("POST", f"/containers/{container_id}/restart?t={timeout}")
+        self._request("POST", f"/containers/{container_id}/restart?t={timeout}")
+
+    def play_kube(self, path: str) -> dict[str, Any]:
+        """
+        Play a Kubernetes YAML file using Podman.
+        Equivalent to: podman play kube <path>
+
+        Args:
+            path: Path to the YAML file.
+
+        Returns:
+            dict: The response from the Podman engine, containing created pods and services.
+        """
+        # import os # This import is needed for os.path.exists
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"YAML file not found: {path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        payload = {"K8sYAML": content}
+        # The endpoint is specific to Libpod (Podman)
+        return self._request("POST", "/libpod/play/kube", body=payload)  # type: ignore
 
     def get_container_logs(self, container_id: str, tail: str | int = "all") -> str:
         """
