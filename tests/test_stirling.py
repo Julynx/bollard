@@ -7,7 +7,6 @@ from tqdm import tqdm
 from bollard import DockerClient
 
 
-@pytest.mark.integration
 def test_stirling_pdf_conversion(docker_client: DockerClient):
     """
     Integration test for Stirling-PDF HTML to PDF conversion.
