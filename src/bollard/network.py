@@ -32,7 +32,6 @@ class Network(DockerResource):
         logger.info("Creating network %s (driver=%s)...", name, driver)
         payload = {"Name": name, "Driver": driver, **kwargs}
         res = client._request("POST", "/networks/create", body=payload)
-        # res has only Id and Warning.
         return cls(client, {"Id": res.get("Id"), "Name": name, "Driver": driver})
 
     @property

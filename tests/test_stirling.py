@@ -14,8 +14,6 @@ def test_stirling_pdf_conversion(docker_client: DockerClient):
     image = "frooodle/s-pdf"
 
     try:
-        # Ensure image is pulled (this might take a while the first time)
-        # Most environments would pre-pull this or have it cached.
         try:
             docker_client.pull_image(image)
         except Exception:
@@ -63,10 +61,6 @@ def test_stirling_pdf_conversion(docker_client: DockerClient):
 
             try:
                 container.copy_from("/test.pdf", ".")
-                # copy_from might put it in the current dir if '.' is used,
-                # or we might need to be careful with paths.
-                # Base logic of copy_from: tar.extractall(path=destination_path)
-                # If source is /test.pdf, it will extract to ./test.pdf
                 assert os.path.exists("test.pdf")
                 os.rename("test.pdf", test_output)
                 assert os.path.getsize(test_output) > 0

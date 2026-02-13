@@ -20,10 +20,6 @@ def test_build_image(docker_client: DockerClient, random_name: str, tmp_path) ->
 
     # Build
     try:
-        # Assuming build_image takes path and tag
-        # The library likely needs string path, not Path
-        # object if strictly typed without support
-
         # Consuming default call (returns Image now)
         docker_client.build_image(str(tmp_path), image_tag)
 
@@ -32,7 +28,6 @@ def test_build_image(docker_client: DockerClient, random_name: str, tmp_path) ->
         found = False
         for img in images:
             for tag in img.tags:
-                # Docker might prepend docker.io/library/
                 if tag.endswith(image_tag) or image_tag in tag:
                     found = True
                     break

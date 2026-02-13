@@ -19,6 +19,4 @@ class DockerResource:
 
     def reload(self) -> None:
         """Refresh this object's data from the server."""
-        # This base method might not know how to fetch,
-        # but subclasses like Container do.
         raise NotImplementedError

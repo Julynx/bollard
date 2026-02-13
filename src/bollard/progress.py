@@ -11,7 +11,6 @@ class DockerProgress:
 
     def __init__(self, generator: Generator[Dict[str, Any], None, None]) -> None:
         self.generator = generator
-        # Track progress of multiple layers/items by ID
         self.layers: Dict[str, Dict[str, Any]] = {}
 
     def consume(self) -> List[Dict[str, Any]]:
@@ -36,9 +35,6 @@ class DockerProgress:
         """
         # Handle "stream" (e.g., from build output)
         if "stream" in event:
-            # logger.info adds a newline, so we might want
-            # to strip one from the stream if present
-            # so we don't double-space log output.
             msg = event["stream"].rstrip()
             if msg:
                 logger.info(msg)
@@ -51,12 +47,8 @@ class DockerProgress:
             progress = event.get("progress", "")
 
             if layer_id:
-                # Store layer state
                 prev_event = self.layers.get(layer_id)
                 prev_status = prev_event.get("status") if prev_event else None
-
-                # Only print if status changes to avoid spamming the console
-                # with download progress percentages thousands of times
                 if status != prev_status:
                     if progress and "Downloading" in status:
                         # Maybe modify output to show simplified intent?

@@ -41,14 +41,12 @@ class Container(DockerResource):
         image: str,
         command: str | List[str] | None = None,
         name: str | None = None,
-        # Default behavior: Keep stdin open and allocate a pseudo-TTY.
-        # This prevents shell containers (alpine, ubuntu) from exiting immediately.
         detach: bool = True,
         tty: bool = True,
         stdin_open: bool = True,
         environment: dict[str, str] | None = None,
-        volumes: dict[str, str] | None = None,  # {host_path: container_path}
-        ports: dict[str, str | int] | None = None,  # {container_port: host_port}
+        volumes: dict[str, str] | None = None,
+        ports: dict[str, str | int] | None = None,
         runtime: str | None = None,
         gpu: bool = False,
         ipc_mode: str | None = None,
@@ -104,7 +102,7 @@ class Container(DockerResource):
             host_config["DeviceRequests"] = [
                 {
                     "Driver": "",
-                    "Count": -1,  # All GPUs
+                    "Count": -1,
                     "DeviceIDs": [],
                     "Capabilities": [["gpu"]],
                     "Options": {},
@@ -128,9 +126,6 @@ class Container(DockerResource):
         except DockerException as e:
             if "404" in str(e):
                 logger.info("Image '%s' not found, pulling...", image)
-                # We need to pull the image.
-                # Assuming client has pull_image or we use Image.pull
-                # client methods might be refactored, so safer to use Image.pull
                 from .image import Image
 
                 Image.pull(client, image)
@@ -149,9 +144,6 @@ class Container(DockerResource):
                 "Failed to start container %s: %s. Cleaning up...", container_id[:12], e
             )
             try:
-                # We can call remove logic here
-                # Container(client, {"Id": container_id}).remove(force=True)
-                # But to avoid recursion or instantiation, use request directly:
                 client._request("DELETE", f"/containers/{container_id}?force=true")
             except Exception:
                 pass
@@ -399,7 +391,7 @@ class Container(DockerResource):
         """
         Copy a local file or directory into a container.
         """
-        import os  # Import here or at top level
+        import os
 
         source_path = os.path.abspath(source_path)
         if not os.path.exists(source_path):

@@ -39,10 +39,7 @@ def test_copy_operations(docker_client: DockerClient, tmp_path) -> None:
             container.exec(["mkdir", "-p", "/tmp/from_dir"])
             container.exec(["sh", "-c", "echo 'in dir' > /tmp/from_dir/file.txt"])
 
-            dest_dir = (
-                tmp_path / "from_dir"
-            )  # copy_from likely copies the folder itself into the target logic
-            # If I copy /tmp/from_dir to tmp_path, it should appear as tmp_path/from_dir
+            dest_dir = tmp_path / "from_dir"
 
             container.copy_from("/tmp/from_dir", str(tmp_path))
             assert dest_dir.exists()
