@@ -5,6 +5,8 @@ import sys
 import time
 from typing import IO, Any
 
+from .const import DEFAULT_TIMEOUT
+
 
 class NpipeSocket:
     """A wrapper for Windows Named Pipes to mimic a socket."""
@@ -12,8 +14,9 @@ class NpipeSocket:
     def __init__(self) -> None:
         self._handle: IO[bytes] | None = None
 
-    def connect(self, address: str) -> None:
+    def connect(self, address: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         """Connect to the named pipe at the given address."""
+        start_time = time.time()
         while True:
             try:
                 file_descriptor = os.open(address, os.O_RDWR | os.O_BINARY)
@@ -23,6 +26,10 @@ class NpipeSocket:
             except FileNotFoundError:
                 raise
             except OSError:
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(
+                        f"Timed out connecting to {address} after {timeout}s"
+                    )
                 time.sleep(0.1)
 
     def sendall(self, data: bytes) -> None:

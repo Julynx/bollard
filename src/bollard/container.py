@@ -8,6 +8,7 @@ import tarfile
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
+from .const import DEFAULT_KILL_SIGNAL, DEFAULT_TIMEOUT
 from .docker_resource import DockerResource
 from .exceptions import DockerException
 from .transport import UnixHttpConnection
@@ -195,11 +196,23 @@ class Container(DockerResource):
     def image(self) -> str:
         return self.attrs.get("Image", "")
 
-    def stop(self, timeout: int = 10) -> None:
+    def stop(self, timeout: int = DEFAULT_TIMEOUT) -> None:
+        """
+        Stop the container.
+
+        Args:
+            timeout: Seconds to wait for the container to stop before killing it.
+        """
         logger.info("Stopping container %s...", self.resource_id[:12])
         self.client._request("POST", f"/containers/{self.resource_id}/stop?t={timeout}")
 
-    def kill(self, signal: str = "SIGKILL") -> None:
+    def kill(self, signal: str = DEFAULT_KILL_SIGNAL) -> None:
+        """
+        Kill the container.
+
+        Args:
+            signal: Signal to send to the container (default: SIGKILL).
+        """
         logger.info("Killing container %s...", self.resource_id[:12])
         self.client._request(
             "POST", f"/containers/{self.resource_id}/kill?signal={signal}"
@@ -209,7 +222,13 @@ class Container(DockerResource):
         logger.info("Starting container %s...", self.resource_id[:12])
         self.client._request("POST", f"/containers/{self.resource_id}/start")
 
-    def restart(self, timeout: int = 10) -> None:
+    def restart(self, timeout: int = DEFAULT_TIMEOUT) -> None:
+        """
+        Restart the container.
+
+        Args:
+            timeout: Seconds to wait for the container to stop before restarting.
+        """
         logger.info("Restarting container %s...", self.resource_id[:12])
         self.client._request(
             "POST", f"/containers/{self.resource_id}/restart?t={timeout}"

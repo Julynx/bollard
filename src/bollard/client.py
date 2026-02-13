@@ -8,6 +8,7 @@ import sys
 import time
 from typing import Any, Generator
 
+from .const import DEFAULT_TIMEOUT
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 from .transport import UnixHttpConnection
@@ -252,7 +253,7 @@ class DockerClient:
             **kwargs,
         )
 
-    def stop_container(self, container_id: str, timeout: int = 10) -> Any:
+    def stop_container(self, container_id: str, timeout: int = DEFAULT_TIMEOUT) -> Any:
         """
         Stop a container.
         """
@@ -308,7 +309,9 @@ class DockerClient:
         """
         return Container(self, {"Id": container_id}).start()
 
-    def restart_container(self, container_id: str, timeout: int = 10) -> None:
+    def restart_container(
+        self, container_id: str, timeout: int = DEFAULT_TIMEOUT
+    ) -> None:
         """
         Restart a container.
         """
@@ -451,7 +454,8 @@ class DockerClient:
         try:
             with open(config_path, "r", encoding="utf-8") as config_file:
                 data = json.load(config_file)
-                return data.get("auths", {})  # type: ignore
+                auths: dict[str, Any] = data.get("auths", {})
+                return auths
 
         except (OSError, json.JSONDecodeError):
             logger.warning("Failed to load Docker config from %s", config_path)
