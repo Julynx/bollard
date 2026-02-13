@@ -17,7 +17,13 @@ from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 from .transport import UnixHttpConnection
 
+# Configure logging to INFO
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 class DockerClient:
@@ -227,11 +233,33 @@ class DockerClient:
         detach: bool = True,
         tty: bool = True,
         stdin_open: bool = True,
+        environment: dict[str, str] | None = None,
+        volumes: dict[str, str]
+        | None = None,  # {host_path: container_path} or vice versa? Docker API usually uses "host:container:mode"
+        ports: dict[str, str | int] | None = None,  # {container_port: host_port}
+        runtime: str | None = None,
+        gpu: bool = False,
+        ipc_mode: str | None = None,
         **kwargs: Any,
     ) -> Container:
         """
         Create and start a container.
         Defaults to -itd (Interactive, TTY, Detached) behavior.
+
+        Args:
+            image: Image to use
+            command: Command to run
+            name: Optional name for the container
+            detach: Whether to run in background
+            tty: Allocate a pseudo-TTY
+            stdin_open: Keep stdin open
+            environment: Dictionary of environment variables
+            volumes: Dictionary of volume mappings {host_path: container_path}
+            ports: Dictionary of port mappings {container_port: host_port}
+            runtime: Runtime to use (e.g. "nvidia")
+            gpu: If True, adds NVIDIA GPU device requests
+            ipc_mode: IPC mode to use (e.g. "host")
+            **kwargs: Additional parameters for the container creation API
         """
         logger.info("Creating container for image '%s'...", image)
 
@@ -247,17 +275,86 @@ class DockerClient:
             else:
                 payload["Cmd"] = command
 
+        if environment:
+            payload["Env"] = [f"{k}={v}" for k, v in environment.items()]
+
+        host_config: dict[str, Any] = {}
+
+        if volumes:
+            # Docker API Format for Binds is ["/host:/container:ro"]
+            host_config["Binds"] = [f"{h}:{c}" for h, c in volumes.items()]
+
+        if ports:
+            # "ExposedPorts": { "80/tcp": {} }
+            # "HostConfig": { "PortBindings": { "80/tcp": [{ "HostPort": "8080" }] } }
+            exposed_ports = {}
+            port_bindings = {}
+            for container_port, host_port in ports.items():
+                if "/" not in str(container_port):
+                    container_port = f"{container_port}/tcp"
+                exposed_ports[container_port] = {}
+                port_bindings[container_port] = [{"HostPort": str(host_port)}]
+            payload["ExposedPorts"] = exposed_ports
+            host_config["PortBindings"] = port_bindings
+
+        if runtime:
+            host_config["Runtime"] = runtime
+
+        if ipc_mode:
+            host_config["IpcMode"] = ipc_mode
+
+        if gpu:
+            # Simplified NVIDIA GPU request
+            host_config["DeviceRequests"] = [
+                {
+                    "Driver": "",
+                    "Count": -1,  # All GPUs
+                    "DeviceIDs": [],
+                    "Capabilities": [["gpu"]],
+                    "Options": {},
+                }
+            ]
+
+        if host_config:
+            payload["HostConfig"] = host_config
+
+        # Merging extra kwargs into payload.
+        # If kwargs contains HostConfig, we might need a deep merge, but for now simple update.
+        if "HostConfig" in kwargs and host_config:
+            payload["HostConfig"].update(kwargs.pop("HostConfig"))
+
         payload.update(kwargs)
 
         endpoint = "/containers/create"
         if name:
             endpoint += f"?name={name}"
 
-        create_res = self._request("POST", endpoint, body=payload)
+        try:
+            create_res = self._request("POST", endpoint, body=payload)
+        except DockerException as e:
+            if "404" in str(e):
+                logger.info("Image '%s' not found, pulling...", image)
+                for _ in self.pull_image(image):
+                    pass
+                logger.info("Image pulled successfully. Retrying container creation...")
+                create_res = self._request("POST", endpoint, body=payload)
+            else:
+                raise e
+
         container_id: str = create_res["Id"]
 
-        logger.info("Starting container %s...", container_id[:12])
-        self._request("POST", f"/containers/{container_id}/start")
+        try:
+            logger.info("Starting container %s...", container_id[:12])
+            self._request("POST", f"/containers/{container_id}/start")
+        except Exception as e:
+            logger.error(
+                "Failed to start container %s: %s. Cleaning up...", container_id[:12], e
+            )
+            try:
+                self.remove_container(container_id, force=True)
+            except Exception:
+                pass
+            raise e
 
         return Container(
             self,
@@ -443,7 +540,7 @@ class DockerClient:
             "AttachStdout": True,
             "AttachStderr": True,
             "Tty": tty,
-            "Cmd": command if isinstance(command, list) else command.split(),
+            "Cmd": command if isinstance(command, list) else shlex.split(command),
         }
         res: dict[str, Any] = self._request(
             "POST", f"/containers/{container_id}/exec", body=payload
