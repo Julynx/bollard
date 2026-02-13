@@ -16,9 +16,10 @@ class NpipeSocket:
         """Connect to the named pipe at the given address."""
         while True:
             try:
-                fd = os.open(address, os.O_RDWR | os.O_BINARY)
-                self._handle = os.fdopen(fd, "r+b", buffering=0)
+                file_descriptor = os.open(address, os.O_RDWR | os.O_BINARY)
+                self._handle = os.fdopen(file_descriptor, "r+b", buffering=0)
                 break
+
             except FileNotFoundError:
                 raise
             except OSError:

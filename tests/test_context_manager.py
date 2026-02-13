@@ -9,8 +9,8 @@ def test_container_context_manager(
     command = "echo 'Hello Context'"
 
     with docker_client.container(alpine_image, command="sleep 5") as container:
-        assert container.id is not None
-        print(f"Container {container.id} is running.")
+        assert container.resource_id is not None
+        print(f"Container {container.resource_id} is running.")
 
         # Test exec inside context
         output = container.exec(command)

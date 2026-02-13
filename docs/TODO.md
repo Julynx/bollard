@@ -1,7 +1,4 @@
 # TODO
 
-- Comprehensive and proper test suite
-- Move actual logic into models.py
-  - Separate models.py into different files
-- Offer to install podman (windows/linux)
-- Upload to github
+- [x] Comprehensive and proper test suite
+- [x] Move actual logic from client.py into separate files

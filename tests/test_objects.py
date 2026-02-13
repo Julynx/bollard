@@ -13,8 +13,8 @@ def test_container_lifecycle(docker_client: DockerClient, alpine_image: str) -> 
 
     try:
         # 2. Assert ID exists
-        assert container.id is not None, "Container ID should not be None"
-        assert len(container.id) > 0
+        assert container.resource_id is not None, "Container ID should not be None"
+        assert len(container.resource_id) > 0
 
         # Reload to get status (run_container now does it, but good to be sure or check updates)
         container.reload()

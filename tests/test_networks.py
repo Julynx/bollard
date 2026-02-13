@@ -7,7 +7,7 @@ def test_network_lifecycle(docker_client: DockerClient, random_name: str) -> Non
 
     try:
         network = docker_client.create_network(network_name, driver="bridge")
-        assert network.id is not None
+        assert network.resource_id is not None
 
         # Inspect
         info = network.inspect()

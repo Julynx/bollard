@@ -20,13 +20,14 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
     # Ensure image
     try:
         list(docker_client.pull_image(image))
-    except:
+    except Exception:
         pass
 
     # Command to keep running and listen on 8000
     # alpine's nc syntax might vary.
     # "nc -l -p 8000" or "nc -l 8000"
-    command = "sh -c 'while true; do echo -e \"HTTP/1.1 200 OK\\n\\nHello\" | nc -l -p 8000; done'"
+    # command = "sh -c 'while true; do echo -e \"HTTP/1.1 200 OK\\n\\nHello\" | nc -l -p 8000; done'"
+
     # Or just sleep and we check env/vol. Port check might fail if nc issues.
     # Let's stick to env/vol check with simple sleep, and skip port check if complicated,
     # OR use the python image if originally intended, but might be slow.
