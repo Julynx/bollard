@@ -12,6 +12,9 @@ dev = [
     "pylint>=4.0.4",
     "pyright>=1.1.408",
     "yina>=0.1.10",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 [build-system]
@@ -30,3 +33,7 @@ disallow_untyped_defs = true
 
 [tool.pylint]
 max-line-length = 88
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

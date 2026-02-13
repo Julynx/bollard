@@ -1,0 +1,119 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- D:\_DISK_\_Documentos_\Mis_repositorios\bollard\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\_DISK_\_Documentos_\Mis_repositorios\bollard
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 12 items
+
+tests/test_build.py::test_build_image PASSED                             [  8%]
+tests/test_container_config.py::test_container_configuration PASSED      [ 16%]
+tests/test_containers.py::test_container_actions FAILED                  [ 25%]
+tests/test_containers.py::test_exec PASSED                               [ 33%]
+tests/test_context_manager.py::test_container_context_manager PASSED     [ 41%]
+tests/test_copy.py::test_copy_operations PASSED                          [ 50%]
+tests/test_images.py::test_list_images PASSED                            [ 58%]
+tests/test_images.py::test_pull_image PASSED                             [ 66%]
+tests/test_integration_vllm.py::test_vllm_integration SKIPPED (Skipping
+integration test. Set RUN_INTEGRATION_TESTS=1 to run.)                   [ 75%]
+tests/test_networks.py::test_network_lifecycle PASSED                    [ 83%]
+tests/test_objects.py::test_container_lifecycle FAILED                   [ 91%]
+tests/test_volumes.py::test_volume_lifecycle PASSED                      [100%]
+
+================================== FAILURES ===================================
+___________________________ test_container_actions ____________________________
+
+docker_client = <bollard.client.DockerClient object at 0x00000224DB2C1BD0>
+alpine_image = 'alpine:latest', random_name = 'bollard-test-50842426'
+
+    def test_container_actions(
+        docker_client: DockerClient, alpine_image: str, random_name: str
+    ) -> None:
+        """Test start, stop, restart, kill, logs."""
+    
+        # Create but don't start immediately (if possible, but run_container starts by default)
+        # bollard.run_container usually creates and starts.
+        container = docker_client.run_container(
+            alpine_image, command="sleep 60", name=random_name
+        )
+    
+        try:
+>           assert container.status == "running" or container.status == "created"
+E           AssertionError: assert ('' == 'running'
+E             
+E             - running or '' == 'created'
+E             
+E             - created)
+
+tests\test_containers.py:18: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-02-13 13:31:13,466 - bollard.client - INFO - Connected to Docker/Podman via \\.\pipe\docker_engine
+2026-02-13 13:31:13,466 - bollard.client - INFO - Pulling alpine:latest...
+----------------------------- Captured log setup ------------------------------
+INFO     bollard.client:client.py:77 Connected to Docker/Podman via \\.\pipe\docker_engine
+INFO     bollard.client:client.py:384 Pulling alpine:latest...
+---------------------------- Captured stdout call -----------------------------
+2026-02-13 13:31:15,097 - bollard.client - INFO - Creating container for image 'alpine:latest'...
+2026-02-13 13:31:15,172 - bollard.client - INFO - Starting container 65ffdb1ac0ad...
+2026-02-13 13:31:15,363 - bollard.client - INFO - Removing container 65ffdb1ac0ad...
+------------------------------ Captured log call ------------------------------
+INFO     bollard.client:client.py:264 Creating container for image 'alpine:latest'...
+INFO     bollard.client:client.py:347 Starting container 65ffdb1ac0ad...
+INFO     bollard.client:client.py:457 Removing container 65ffdb1ac0ad...
+__________________________ test_container_lifecycle ___________________________
+
+docker_client = <bollard.client.DockerClient object at 0x00000224DB273A70>
+alpine_image = 'alpine:latest'
+
+    def test_container_lifecycle(docker_client: DockerClient, alpine_image: str) -> None:
+        """Test basic container lifecycle: run, inspect, logs, remove."""
+    
+        # 1. Run container
+        command = "echo 'Hello World'"
+        container = docker_client.run_container(alpine_image, command=command)
+    
+        try:
+            # 2. Assert ID exists
+            assert container.id is not None
+            assert len(container.id) > 0
+    
+            # 3. Wait and check logs
+            time.sleep(1)  # Short wait for command to execute
+            logs = container.logs()
+>           assert "Hello World" in logs.strip()
+E           assert 'Hello World' in '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}'
+E            +  where '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}' = <built-in method strip of str object at 0x00000224DB29A010>()
+E            +    where <built-in method strip of str object at 0x00000224DB29A010> = '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}\n'.strip
+
+tests\test_objects.py:20: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-02-13 13:32:04,324 - bollard.client - INFO - Connected to Docker/Podman via \\.\pipe\docker_engine
+2026-02-13 13:32:04,324 - bollard.client - INFO - Pulling alpine:latest...
+----------------------------- Captured log setup ------------------------------
+INFO     bollard.client:client.py:77 Connected to Docker/Podman via \\.\pipe\docker_engine
+INFO     bollard.client:client.py:384 Pulling alpine:latest...
+---------------------------- Captured stdout call -----------------------------
+2026-02-13 13:32:05,868 - bollard.client - INFO - Creating container for image 'alpine:latest'...
+2026-02-13 13:32:05,967 - bollard.client - INFO - Starting container f3f0cc168431...
+2026-02-13 13:32:07,169 - bollard.client - INFO - Removing container f3f0cc168431...
+------------------------------ Captured log call ------------------------------
+INFO     bollard.client:client.py:264 Creating container for image 'alpine:latest'...
+INFO     bollard.client:client.py:347 Starting container f3f0cc168431...
+INFO     bollard.client:client.py:457 Removing container f3f0cc168431...
+============================== warnings summary ===============================
+tests\test_integration_vllm.py:8
+  D:\_DISK_\_Documentos_\Mis_repositorios\bollard\tests\test_integration_vllm.py:8: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.integration
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_containers.py::test_container_actions - AssertionError: assert ('' == 'running'
+  
+  - running or '' == 'created'
+  
+  - created)
+FAILED tests/test_objects.py::test_container_lifecycle - assert 'Hello World' in '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}'
+ +  where '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}' = <built-in method strip of str object at 0x00000224DB29A010>()
+ +    where <built-in method strip of str object at 0x00000224DB29A010> = '{"cause":"unable to open a handle to the library","message":"failed to obtain logs for Container \'f3f0cc1684318c941355f9f1777c985c7d47974cc3302def9b58646ac441182e\': unable to open a handle to the library","response":500}\n'.strip
+======== 2 failed, 9 passed, 1 skipped, 1 warning in 67.74s (0:01:07) =========

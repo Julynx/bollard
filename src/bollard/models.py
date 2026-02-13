@@ -19,11 +19,21 @@ class DockerResource:
 
     def reload(self) -> None:
         """Refresh this object's data from the server."""
+        # This base method might not know how to fetch,
+        # but subclasses like Container do.
         raise NotImplementedError
 
 
 class Container(DockerResource):
     """A Docker container."""
+
+    def reload(self) -> None:
+        """Refresh this object's data from the server."""
+        self.attrs = self.client.inspect_container(self.id)
+        if "Id" not in self.attrs:
+            # Some implementations put it under "Config" or "State"? NO, top level.
+            # But just in case
+            pass
 
     @property
     def name(self) -> str:
@@ -35,6 +45,11 @@ class Container(DockerResource):
 
     @property
     def status(self) -> str:
+        state = self.attrs.get("State")
+        if isinstance(state, dict):
+            return state.get("Status", "")
+        if isinstance(state, str):
+            return state
         return self.attrs.get("Status", "")
 
     @property
@@ -43,6 +58,9 @@ class Container(DockerResource):
 
     def stop(self, timeout: int = 10) -> None:
         self.client.stop_container(self.id, timeout)
+
+    def kill(self, signal: str = "SIGKILL") -> None:
+        self.client.kill_container(self.id, signal)
 
     def start(self) -> None:
         self.client.start_container(self.id)

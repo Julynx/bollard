@@ -356,7 +356,7 @@ class DockerClient:
                 pass
             raise e
 
-        return Container(
+        container = Container(
             self,
             {
                 "Id": container_id,
@@ -364,6 +364,13 @@ class DockerClient:
                 "Names": [f"/{name}"] if name else [],
             },
         )
+        try:
+            container.reload()
+        except Exception:
+            # Ignore reload errors (e.g. if container died immediately),
+            # return the object as is.
+            pass
+        return container
 
     def stop_container(self, container_id: str, timeout: int = 10) -> Any:
         """
@@ -372,6 +379,14 @@ class DockerClient:
         """
         logger.info("Stopping container %s...", container_id[:12])
         return self._request("POST", f"/containers/{container_id}/stop?t={timeout}")
+
+    def kill_container(self, container_id: str, signal: str = "SIGKILL") -> Any:
+        """
+        Kill a container.
+        Equivalent to: docker kill
+        """
+        logger.info("Killing container %s...", container_id[:12])
+        return self._request("POST", f"/containers/{container_id}/kill?signal={signal}")
 
     def pull_image(self, image_name: str) -> Generator[dict[str, Any], None, None]:
         """
@@ -481,6 +496,13 @@ class DockerClient:
         """
         logger.info("Restarting container %s...", container_id[:12])
         self._request("POST", f"/containers/{container_id}/restart?t={timeout}")
+
+    def inspect_container(self, container_id: str) -> dict[str, Any]:
+        """
+        Inspect a container.
+        Equivalent to: docker inspect
+        """
+        return self._request("GET", f"/containers/{container_id}/json")
 
     def play_kube(self, path: str) -> dict[str, Any]:
         """
