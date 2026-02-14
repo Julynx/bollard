@@ -6,6 +6,9 @@ readme = "docs/README.md"
 requires-python = ">=3.14"
 dependencies = []
 
+[project.urls]
+Repository = "https://github.com/Julynx/bollard"
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
