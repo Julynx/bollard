@@ -1,17 +1,15 @@
 import base64
-import http.client
-import io
 import json
 import logging
 import shlex
 import tarfile
+import tempfile
 import urllib.parse
-from typing import TYPE_CHECKING, Any, List
+from typing import IO, TYPE_CHECKING, Any, Generator, List
 
 from .const import DEFAULT_KILL_SIGNAL, DEFAULT_TIMEOUT
 from .docker_resource import DockerResource
 from .exceptions import DockerException
-from .transport import UnixHttpConnection
 
 if TYPE_CHECKING:
     from .client import DockerClient
@@ -58,6 +56,41 @@ class Container(DockerResource):
         """
         logger.info("Creating container for image '%s'...", image)
 
+        payload = cls._build_container_config(
+            image,
+            command,
+            stdin_open,
+            tty,
+            environment,
+            volumes,
+            ports,
+            runtime,
+            ipc_mode,
+            gpu,
+            **kwargs,
+        )
+
+        endpoint = "/containers/create"
+        if name:
+            endpoint += f"?name={name}"
+
+        return cls._create_and_start(client, endpoint, payload, image, name)
+
+    @classmethod
+    def _build_container_config(
+        cls,
+        image: str,
+        command: str | List[str] | None,
+        stdin_open: bool,
+        tty: bool,
+        environment: dict[str, str] | None,
+        volumes: dict[str, str] | None,
+        ports: dict[str, str | int] | None,
+        runtime: str | None,
+        ipc_mode: str | None,
+        gpu: bool,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "Image": image,
             "Tty": tty,
@@ -73,6 +106,31 @@ class Container(DockerResource):
         if environment:
             payload["Env"] = [f"{key}={value}" for key, value in environment.items()]
 
+        host_config = cls._build_host_config(volumes, runtime, ipc_mode, gpu)
+
+        if ports:
+            exposed_ports, port_bindings = cls._configure_ports(ports)
+            payload["ExposedPorts"] = exposed_ports
+            host_config["PortBindings"] = port_bindings
+
+        if host_config:
+            payload["HostConfig"] = host_config
+
+        if "HostConfig" in kwargs and host_config:
+            payload["HostConfig"].update(kwargs.pop("HostConfig"))
+
+        payload.update(kwargs)
+        return payload
+
+    @classmethod
+    def _build_host_config(
+        cls,
+        volumes: dict[str, str] | None,
+        runtime: str | None,
+        ipc_mode: str | None,
+        gpu: bool,
+    ) -> dict[str, Any]:
+        """Build the HostConfig dictionary."""
         host_config: dict[str, Any] = {}
 
         if volumes:
@@ -80,17 +138,6 @@ class Container(DockerResource):
                 f"{host_path}:{container_path}"
                 for host_path, container_path in volumes.items()
             ]
-
-        if ports:
-            exposed_ports = {}
-            port_bindings = {}
-            for container_port, host_port in ports.items():
-                if "/" not in str(container_port):
-                    container_port = f"{container_port}/tcp"
-                exposed_ports[container_port] = {}
-                port_bindings[container_port] = [{"HostPort": str(host_port)}]
-            payload["ExposedPorts"] = exposed_ports
-            host_config["PortBindings"] = port_bindings
 
         if runtime:
             host_config["Runtime"] = runtime
@@ -109,18 +156,31 @@ class Container(DockerResource):
                 }
             ]
 
-        if host_config:
-            payload["HostConfig"] = host_config
+        return host_config
 
-        if "HostConfig" in kwargs and host_config:
-            payload["HostConfig"].update(kwargs.pop("HostConfig"))
+    @classmethod
+    def _configure_ports(
+        cls, ports: dict[str, str | int]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Format ports for ExposedPorts and PortBindings."""
+        exposed_ports = {}
+        port_bindings = {}
+        for container_port, host_port in ports.items():
+            if "/" not in str(container_port):
+                container_port = f"{container_port}/tcp"
+            exposed_ports[container_port] = {}
+            port_bindings[container_port] = [{"HostPort": str(host_port)}]
+        return exposed_ports, port_bindings
 
-        payload.update(kwargs)
-
-        endpoint = "/containers/create"
-        if name:
-            endpoint += f"?name={name}"
-
+    @classmethod
+    def _create_and_start(
+        cls,
+        client: "DockerClient",
+        endpoint: str,
+        payload: dict[str, Any],
+        image: str,
+        name: str | None,
+    ) -> "Container":
         try:
             create_res = client._request("POST", endpoint, body=payload)
         except DockerException as e:
@@ -243,26 +303,69 @@ class Container(DockerResource):
         query = urllib.parse.urlencode(params)
         self.client._request("DELETE", f"/containers/{self.resource_id}?{query}")
 
-    def logs(self, tail: str | int = "all") -> str:
+    def logs(
+        self,
+        tail: str | int = "all",
+        stream: bool = False,
+        follow: bool = False,
+        encoding: str = "utf-8",
+        errors: str = "ignore",
+    ) -> str | Generator[str, None, None]:
         """
         Fetch container logs.
         Equivalent to: docker logs
+
+        Args:
+            tail: Number of lines to show from the end of the logs.
+            stream: If True, return a generator yielding log lines.
+            follow: If True, stream logs as they happen (implies stream=True).
+            encoding: Encoding to use for decoding logs.
+            errors: Error handling strategy for decoding logs.
         """
         params = {"stdout": "true", "stderr": "true", "tail": str(tail)}
+        if follow:
+            params["follow"] = "true"
+            stream = True
+
         query = urllib.parse.urlencode(params)
-        conn = UnixHttpConnection(self.client.socket_path)
+
+        response = self.client._request(
+            "GET", f"/containers/{self.resource_id}/logs?{query}", stream=True
+        )
+
+        if stream:
+            return self._stream_log_response(response, encoding=encoding, errors=errors)
+
         try:
-            logger.debug("GET /containers/%s/logs?%s", self.resource_id, query)
-            conn.request("GET", f"/containers/{self.resource_id}/logs?{query}")
-            response = conn.getresponse()
             data = response.read()
-            return data.decode("utf-8", errors="ignore")
+            return data.decode(encoding, errors=errors)
         finally:
-            conn.close()
+            response.close()
+
+    def _stream_log_response(
+        self, response: Any, encoding: str = "utf-8", errors: str = "replace"
+    ) -> Generator[str, None, None]:
+        """
+        Yields decoded lines from response.
+        Note: This simplistic implementation doesn't strip Docker headers if Tty=False.
+        """
+        try:
+            for line in response:
+                yield line.decode(encoding, errors=errors)
+        except Exception:
+            pass
+        finally:
+            response.close()
 
     def exec(
-        self, command: str | List[str], detach: bool = False, tty: bool = False
-    ) -> str:
+        self,
+        command: str | List[str],
+        detach: bool = False,
+        tty: bool = False,
+        stream: bool = False,
+        encoding: str = "utf-8",
+        errors: str = "ignore",
+    ) -> str | Generator[str, None, None]:
         """
         Execute a command in a running container.
         Equivalent to: docker exec
@@ -285,30 +388,51 @@ class Container(DockerResource):
             self.client._request("POST", f"/exec/{exec_id}/start", body=start_payload)
             return exec_id
 
-        conn = UnixHttpConnection(self.client.socket_path)
-        headers = {"Content-Type": "application/json"}
-        try:
-            logger.debug("POST /exec/%s/start", exec_id)
-            conn.request(
-                "POST",
-                f"/exec/{exec_id}/start",
-                body=json.dumps(start_payload),
-                headers=headers,
-            )
-            response = conn.getresponse()
+        # Streaming request
+        response = self.client._request(
+            "POST", f"/exec/{exec_id}/start", body=start_payload, stream=True
+        )
 
-            if response.status >= 400:
-                data = response.read().decode("utf-8", errors="ignore")
-                raise DockerException(f"Exec Error ({response.status}): {data}")
-
+        if stream:
             if tty:
-                return response.read().decode("utf-8", errors="ignore")
+                return self._stream_log_response(
+                    response, encoding=encoding, errors=errors
+                )
             else:
-                return self._read_multiplexed_response(response)
-        finally:
-            conn.close()
+                return self._stream_multiplexed(
+                    response, encoding=encoding, errors=errors
+                )
 
-    def _read_multiplexed_response(self, response: http.client.HTTPResponse) -> str:
+        try:
+            if tty:
+                return response.read().decode(encoding, errors=errors)
+            else:
+                return self._read_multiplexed_response(
+                    response, encoding=encoding, errors=errors
+                )
+        finally:
+            response.close()
+
+    def _stream_multiplexed(
+        self, response: Any, encoding: str = "utf-8", errors: str = "replace"
+    ) -> Generator[str, None, None]:
+        """Generator for multiplexed streams."""
+        try:
+            while True:
+                header = response.read(8)
+                if not header or len(header) < 8:
+                    break
+                payload_size = int.from_bytes(header[4:8], "big")
+                payload = response.read(payload_size)
+                if not payload:
+                    break
+                yield payload.decode(encoding, errors=errors)
+        finally:
+            response.close()
+
+    def _read_multiplexed_response(
+        self, response: Any, encoding: str = "utf-8", errors: str = "ignore"
+    ) -> str:
         """
         Reads a Docker multiplexed response (when Tty=False) and combines stdout/stderr.
         """
@@ -325,67 +449,48 @@ class Container(DockerResource):
 
             payload = response.read(payload_size)
             if stream_type in (1, 2):  # stdout or stderr
-                output.append(payload.decode("utf-8", errors="ignore"))
+                output.append(payload.decode(encoding, errors=errors))
 
         return "".join(output)
 
-    def put_archive(self, path: str, data: bytes) -> None:
+    def put_archive(self, path: str, data: Any) -> None:
         """
         Upload a tar archive to a container.
         """
         query = urllib.parse.urlencode({"path": path})
-        conn = UnixHttpConnection(self.client.socket_path)
-        try:
-            logger.debug("PUT /containers/%s/archive?%s", self.resource_id, query)
-            headers = {
-                "Content-Type": "application/x-tar",
-                "Content-Length": str(len(data)),
-            }
-            conn.request(
-                "PUT",
-                f"/containers/{self.resource_id}/archive?{query}",
-                body=data,
-                headers=headers,
-            )
-            response = conn.getresponse()
-            resp_data = response.read().decode("utf-8")
 
-            if response.status < 400:
-                return
+        headers = {
+            "Content-Type": "application/x-tar",
+        }
 
-            raise DockerException(f"Put Archive Error ({response.status}): {resp_data}")
-        finally:
-            conn.close()
+        self.client._request(
+            "PUT",
+            f"/containers/{self.resource_id}/archive?{query}",
+            body=data,
+            headers=headers,
+        )
 
-    def get_archive(self, path: str) -> tuple[bytes, dict[str, Any]]:
+    def get_archive(self, path: str) -> tuple[IO[bytes], dict[str, Any]]:
         """
         Download a tar archive from a container.
+        Returns a file-like object (stream) and the stat header info.
         """
         query = urllib.parse.urlencode({"path": path})
-        conn = UnixHttpConnection(self.client.socket_path)
-        try:
-            logger.debug("GET /containers/%s/archive?%s", self.resource_id, query)
-            conn.request("GET", f"/containers/{self.resource_id}/archive?{query}")
-            response = conn.getresponse()
-            data = response.read()
+        logger.debug("GET /containers/%s/archive?%s", self.resource_id, query)
 
-            if response.status < 400:
-                stat_header = response.getheader("X-Docker-Container-Path-Stat")
-                stat_info = {}
-                if stat_header:
-                    try:
-                        stat_info = json.loads(
-                            base64.b64decode(stat_header).decode("utf-8")
-                        )
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                return data, stat_info
+        response = self.client._request(
+            "GET", f"/containers/{self.resource_id}/archive?{query}", stream=True
+        )
 
-            raise DockerException(
-                f"Get Archive Error ({response.status}): {data.decode('utf-8')}"
-            )
-        finally:
-            conn.close()
+        stat_header = response.getheader("X-Docker-Container-Path-Stat")
+        stat_info = {}
+        if stat_header:
+            try:
+                stat_info = json.loads(base64.b64decode(stat_header).decode("utf-8"))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return response, stat_info
 
     def copy_to(self, source_path: str, destination_path: str) -> None:
         """
@@ -397,13 +502,16 @@ class Container(DockerResource):
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source path not found: {source_path}")
 
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-            arcname = os.path.basename(source_path)
-            tar.add(source_path, arcname=arcname)
+        temp_tar = tempfile.TemporaryFile()
+        try:
+            with tarfile.open(fileobj=temp_tar, mode="w") as tar:
+                arcname = os.path.basename(source_path)
+                tar.add(source_path, arcname=arcname)
 
-        tar_stream.seek(0)
-        self.put_archive(destination_path, tar_stream.getvalue())
+            temp_tar.seek(0)
+            self.put_archive(destination_path, temp_tar)
+        finally:
+            temp_tar.close()
 
     def copy_from(self, source_path: str, destination_path: str) -> None:
         """
@@ -416,11 +524,13 @@ class Container(DockerResource):
             self.resource_id[:12],
             destination_path,
         )
-        data, _ = self.get_archive(source_path)
+        response, _ = self.get_archive(source_path)
 
-        tar_stream = io.BytesIO(data)
-        with tarfile.open(fileobj=tar_stream, mode="r") as tar:
-            tar.extractall(path=destination_path)
+        try:
+            with tarfile.open(fileobj=response, mode="r|") as tar:
+                tar.extractall(path=destination_path)
+        finally:
+            response.close()
 
     def __repr__(self) -> str:
         return f"<Container: {self.resource_id[:12]}>"

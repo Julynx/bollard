@@ -40,6 +40,8 @@ class DockerClient:
         else:
             self.socket_path = socket_path
 
+        self._conn: UnixHttpConnection | None = None
+
     def _discover_windows_pipe(self) -> str:
         """
         Attempts to find a valid named pipe for Docker or Podman.
@@ -107,7 +109,20 @@ class DockerClient:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_traceback: Any) -> None:
-        pass
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying connection."""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+    def _get_connection(self) -> UnixHttpConnection:
+        """Get or create a persistent connection."""
+        if self._conn is None:
+            self._conn = UnixHttpConnection(self.socket_path)
+            self._conn.connect()
+        return self._conn
 
     @contextlib.contextmanager
     def container(
@@ -136,57 +151,71 @@ class DockerClient:
                     "Failed to cleanup container %s: %s", container.resource_id[:12], e
                 )
 
+    def _prepare_request_body(self, body: Any, headers: dict[str, str]) -> Any:
+        if body and hasattr(body, "read"):
+            try:
+                current_pos = body.tell()
+                body.seek(0, 2)
+                end_pos = body.tell()
+                body.seek(current_pos)
+                headers["Content-Length"] = str(end_pos - current_pos)
+            except (AttributeError, OSError):
+                pass
+            return body
+        elif body:
+            if isinstance(body, dict):
+                json_body = json.dumps(body)
+                headers["Content-Type"] = "application/json"
+                headers["Content-Length"] = str(len(json_body))
+                return json_body
+            else:
+                if isinstance(body, str):
+                    headers["Content-Length"] = str(len(body))
+                elif isinstance(body, bytes):
+                    headers["Content-Length"] = str(len(body))
+                return body
+        return None
+
     def _request(
         self,
         method: str,
         endpoint: str,
         body: Any | None = None,
         headers: dict[str, str] | None = None,
+        stream: bool = False,
     ) -> Any:
         """Helper to send HTTP requests to the socket"""
-        conn = UnixHttpConnection(self.socket_path)
+        conn = self._get_connection()
         headers = headers or {}
 
-        if body:
-            if isinstance(body, dict):
-                json_body = json.dumps(body)
-                headers["Content-Type"] = "application/json"
-                headers["Content-Length"] = str(len(json_body))
-            else:
-                # Raw body (bytes/str)
-                json_body = body
-        else:
-            json_body = None
-
+        body_to_send = self._prepare_request_body(body, headers)
         headers["Connection"] = "close"
 
         try:
+            conn.request(method, endpoint, body=body_to_send, headers=headers)
+            response = conn.getresponse()
+        except (http.client.CannotSendRequest, BrokenPipeError, ConnectionError):
+            logger.info("Connection lost, reconnecting...")
+            self.close()
+            conn = self._get_connection()
+            conn.request(method, endpoint, body=body_to_send, headers=headers)
+            response = conn.getresponse()
+
+        if stream:
+            if response.status >= 400:
+                data = response.read().decode("utf-8")
+                raise DockerException(f"Docker API Error ({response.status}): {data}")
+            return response
+
+        try:
             logger.debug(
-                "Request: %s %s\nHeaders: %s\nBody: %s",
+                "Request: %s %s\nHeaders: %s",
                 method,
                 endpoint,
                 headers,
-                (
-                    json_body[:500] + "..."
-                    if json_body and len(json_body) > 500
-                    else json_body
-                ),
             )
-            start_time = time.time()
-            conn.request(method, endpoint, body=json_body, headers=headers)
-            response = conn.getresponse()
-            duration = time.time() - start_time
 
             data = response.read().decode("utf-8")
-
-            logger.debug(
-                "Response: %s %s (%.3fs)\nHeaders: %s\nBody: %s",
-                response.status,
-                response.reason,
-                duration,
-                dict(response.getheaders()),
-                data[:500] + "..." if len(data) > 500 else data,
-            )
 
             if response.status < 400:
                 if response.getheader("Content-Type") == "application/json":
@@ -197,8 +226,9 @@ class DockerClient:
                     return data
 
             raise DockerException(f"Docker API Error ({response.status}): {data}")
-        finally:
-            conn.close()
+        except Exception:
+            self.close()
+            raise
 
     def _stream_json_response(
         self, response: http.client.HTTPResponse

@@ -1,12 +1,14 @@
 import base64
-import io
 import json
 import logging
+import os
 import tarfile
+import tempfile
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Generator, List, Literal, overload
 
 from .docker_resource import DockerResource
+from .ignore import DockerIgnore
 from .transport import UnixHttpConnection
 
 if TYPE_CHECKING:
@@ -107,43 +109,58 @@ class Image(DockerResource):
         """
         logger.info("Building image %s from %s...", tag, path)
 
-        # Create a tar context
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-            tar.add(path, arcname=".")
-        tar_stream.seek(0)
+        docker_ignore = DockerIgnore(path)
 
-        query = urllib.parse.urlencode({"t": tag})
-        headers = {
-            "Content-Type": "application/x-tar",
-            "Content-Length": str(len(tar_stream.getvalue())),
-            "Connection": "close",
-        }
+        temp_context = tempfile.TemporaryFile()
+        try:
+            with tarfile.open(fileobj=temp_context, mode="w") as tar:
+                for root, dirs, files in os.walk(path):
+                    dirs[:] = [
+                        dir_name
+                        for dir_name in dirs
+                        if not docker_ignore.is_ignored(os.path.join(root, dir_name))
+                    ]
 
-        conn = UnixHttpConnection(client.socket_path)
-        logger.debug("POST /build?%s", query)
-        conn.request(
-            "POST", f"/build?{query}", body=tar_stream.getvalue(), headers=headers
-        )
-        response = conn.getresponse()
+                    for file in files:
+                        full_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(full_path, path)
 
-        generator = client._stream_json_response(response)
+                        if not docker_ignore.is_ignored(rel_path):
+                            tar.add(full_path, arcname=rel_path)
 
-        if progress:
-            return generator
+            temp_context.seek(0)
 
-        from .progress import DockerProgress
+            query = urllib.parse.urlencode({"t": tag})
+            headers = {
+                "Content-Type": "application/x-tar",
+                "Connection": "keep-alive",
+            }
+            response = client._request(
+                "POST",
+                f"/build?{query}",
+                body=temp_context,
+                headers=headers,
+                stream=True,
+            )
 
-        events = DockerProgress(generator).consume()
+            generator = client._stream_json_response(response)
 
-        # Try to find the image ID from the last 'aux' event
-        image_id = tag
-        for event in reversed(events):
-            if "aux" in event and "ID" in event["aux"]:
-                image_id = event["aux"]["ID"]
-                break
+            if progress:
+                return generator
 
-        return cls(client, {"Id": image_id, "RepoTags": [tag]})
+            from .progress import DockerProgress
+
+            events = DockerProgress(generator).consume()
+
+            image_id = tag
+            for event in reversed(events):
+                if "aux" in event and "ID" in event["aux"]:
+                    image_id = event["aux"]["ID"]
+                    break
+
+            return cls(client, {"Id": image_id, "RepoTags": [tag]})
+        finally:
+            temp_context.close()
 
     @property
     def tags(self) -> List[str]:
