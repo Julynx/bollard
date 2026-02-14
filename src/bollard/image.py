@@ -1,3 +1,5 @@
+"""Image module. Provides the Image class for managing Docker images."""
+
 import base64
 import json
 import logging
@@ -22,9 +24,16 @@ class Image(DockerResource):
 
     @classmethod
     def list(cls, client: "DockerClient", show_all: bool = False) -> List["Image"]:
-        """
-        List images.
-        Equivalent to: docker images
+        """List images.
+
+        Equivalent to: `docker images`
+
+        Args:
+            client: The DockerClient instance.
+            show_all: If True, show all images.
+
+        Returns:
+            A list of Image objects.
         """
         params = {"all": "true"} if show_all else {}
         query = urllib.parse.urlencode(params)
@@ -47,9 +56,9 @@ class Image(DockerResource):
     def pull(
         cls, client: "DockerClient", image_name: str, progress: bool = False
     ) -> Generator[dict[str, Any], None, None] | "Image":
-        """
-        Pull an image.
-        Equivalent to: docker pull
+        """Pull an image.
+
+        Equivalent to: `docker pull`
 
         Args:
             client: The DockerClient instance.
@@ -96,9 +105,9 @@ class Image(DockerResource):
     def build(
         cls, client: "DockerClient", path: str, tag: str, progress: bool = False
     ) -> Generator[dict[str, Any], None, None] | "Image":
-        """
-        Build an image from a directory.
-        Equivalent to: docker build -t tag path
+        """Build an image from a directory.
+
+        Equivalent to: `docker build -t tag path`
 
         Args:
             client: The DockerClient instance.
@@ -106,6 +115,9 @@ class Image(DockerResource):
             tag: Tag to apply to the built image.
             progress: If True, yields progress objects. If False (default),
                       displays a progress bar and returns the Image object.
+
+        Returns:
+            Image object (if progress=False) or Generator (if progress=True)
         """
         logger.info("Building image %s from %s...", tag, path)
 
@@ -164,12 +176,16 @@ class Image(DockerResource):
 
     @property
     def tags(self) -> List[str]:
+        """List of tags associated with this image."""
         return self.attrs.get("RepoTags") or []
 
     def remove(self, force: bool = False) -> None:
-        """
-        Remove an image.
-        Equivalent to: docker rmi
+        """Remove an image.
+
+        Equivalent to: `docker rmi`
+
+        Args:
+            force: If True, force removal of the image.
         """
         logger.info("Removing image %s...", self.resource_id)
         params = {"force": "true"} if force else {}
@@ -198,15 +214,18 @@ class Image(DockerResource):
         auth_config: dict[str, str] | None = None,
         progress: bool = False,
     ) -> Generator[dict[str, Any], None, None] | List[dict[str, Any]]:
-        """
-        Push an image.
-        Equivalent to: docker push
+        """Push an image.
+
+        Equivalent to: `docker push`
 
         Args:
             tag: Optional tag to push.
             auth_config: Optional authentication config.
             progress: If True, yields progress objects. If False (default),
                       displays a progress bar and returns the list of events.
+
+        Returns:
+            A list of events (if progress=False) or a generator (if progress=True).
         """
         image_name = tag or (self.tags[0] if self.tags else self.resource_id)
 

@@ -1,3 +1,6 @@
+"""Transport module. Handles low-level connection details like
+Unix sockets and Named Pipes."""
+
 import http.client
 import os
 import socket
@@ -15,7 +18,16 @@ class NpipeSocket:
         self._handle: IO[bytes] | None = None
 
     def connect(self, address: str, timeout: float = DEFAULT_TIMEOUT) -> None:
-        """Connect to the named pipe at the given address."""
+        """Connect to the named pipe at the given address.
+
+        Args:
+            address: The address of the named pipe.
+            timeout: Connection timeout in seconds.
+
+        Raises:
+            TimeoutError: If the connection times out.
+            OSError: If an OS error occurs.
+        """
         start_time = time.time()
         # Local import to avoid circular dependency
         import logging
@@ -40,13 +52,30 @@ class NpipeSocket:
                 time.sleep(0.1)
 
     def sendall(self, data: bytes) -> None:
-        """Send data to the pipe."""
+        """Send data to the pipe.
+
+        Args:
+            data: The data to send.
+
+        Raises:
+            OSError: If the socket is not connected.
+        """
         if self._handle is None:
             raise OSError("Socket not connected")
         self._handle.write(data)
 
     def recv(self, buffer_size: int) -> bytes:
-        """Receive data from the pipe."""
+        """Receive data from the pipe.
+
+        Args:
+            buffer_size: The maximum amount of data to be received.
+
+        Returns:
+            The received data.
+
+        Raises:
+            OSError: If the socket is not connected.
+        """
         if self._handle is None:
             raise OSError("Socket not connected")
         return self._handle.read(buffer_size) or b""
@@ -54,7 +83,20 @@ class NpipeSocket:
     def makefile(
         self, mode: str, buffer_size: int | None = None, **kwargs: Any
     ) -> IO[bytes]:  # pylint: disable=unused-argument
-        """Create a file object from the pipe handle."""
+        """Create a file object from the pipe handle.
+
+        Args:
+            mode: The mode string (must be 'rb').
+            buffer_size: Optional buffer size.
+            **kwargs: Additional arguments.
+
+        Returns:
+            A file object associated with the pipe.
+
+        Raises:
+            NotImplementedError: If the mode is not 'rb'.
+            OSError: If the socket is not connected.
+        """
         if mode != "rb":
             raise NotImplementedError(f"makefile mode {mode} not supported")
         if self._handle is None:
@@ -69,9 +111,8 @@ class NpipeSocket:
 
 
 class UnixHttpConnection(http.client.HTTPConnection):
-    """
-    Custom HTTP Connection that connects to a Unix Socket
-    instead of a TCP host:port.
+    """Custom HTTP Connection that connects to a Unix Socket instead of a TCP host:port.
+
     On Windows this uses Named Pipes.
     """
 

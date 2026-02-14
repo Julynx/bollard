@@ -1,3 +1,5 @@
+"""Container module. Provides the Container class for managing Docker containers."""
+
 import base64
 import json
 import logging
@@ -22,10 +24,17 @@ class Container(DockerResource):
 
     @classmethod
     def list(cls, client: "DockerClient", show_all: bool = False) -> List["Container"]:
-        """
-        List containers.
-        Equivalent to: docker ps
+        """List containers.
+
+        Equivalent to: `docker ps`
         API: GET /containers/json
+
+        Args:
+            client: The DockerClient instance.
+            show_all: If True, show all containers (including stopped ones).
+
+        Returns:
+            A list of Container objects.
         """
         params = {"all": "true"} if show_all else {}
         query = urllib.parse.urlencode(params)
@@ -50,9 +59,28 @@ class Container(DockerResource):
         ipc_mode: str | None = None,
         **kwargs: Any,
     ) -> "Container":
-        """
-        Create and start a container.
+        """Create and start a container.
+
         Defaults to -itd (Interactive, TTY, Detached) behavior.
+
+        Args:
+            client: The DockerClient instance.
+            image: Image to run.
+            command: Command to run.
+            name: Name of the container.
+            detach: If True, run container in background.
+            tty: If True, allocate a pseudo-TTY.
+            stdin_open: If True, keep STDIN open even if not attached.
+            environment: Environment variables.
+            volumes: Volume mappings.
+            ports: Port mappings.
+            runtime: Runtime to use.
+            gpu: If True, enable GPU support.
+            ipc_mode: IPC mode.
+            **kwargs: Additional arguments passed to container creation.
+
+        Returns:
+            The started Container object.
         """
         logger.info("Creating container for image '%s'...", image)
 
@@ -229,6 +257,7 @@ class Container(DockerResource):
 
     @property
     def name(self) -> str:
+        """The container name."""
         names = self.attrs.get("Names", [])
         if names:
             return names[0].lstrip("/")
@@ -236,6 +265,7 @@ class Container(DockerResource):
 
     @property
     def status(self) -> str:
+        """The container status (e.g., 'running', 'exited')."""
         state = self.attrs.get("State")
         if isinstance(state, dict):
             return state.get("Status", "")
@@ -245,11 +275,11 @@ class Container(DockerResource):
 
     @property
     def image(self) -> str:
+        """The ID of the image used by this container."""
         return self.attrs.get("Image", "")
 
     def stop(self, timeout: int = DEFAULT_TIMEOUT) -> None:
-        """
-        Stop the container.
+        """Stop the container.
 
         Args:
             timeout: Seconds to wait for the container to stop before killing it.
@@ -258,8 +288,7 @@ class Container(DockerResource):
         self.client._request("POST", f"/containers/{self.resource_id}/stop?t={timeout}")
 
     def kill(self, signal: str = DEFAULT_KILL_SIGNAL) -> None:
-        """
-        Kill the container.
+        """Kill the container.
 
         Args:
             signal: Signal to send to the container (default: SIGKILL).
@@ -274,8 +303,7 @@ class Container(DockerResource):
         self.client._request("POST", f"/containers/{self.resource_id}/start")
 
     def restart(self, timeout: int = DEFAULT_TIMEOUT) -> None:
-        """
-        Restart the container.
+        """Restart the container.
 
         Args:
             timeout: Seconds to wait for the container to stop before restarting.
@@ -291,6 +319,14 @@ class Container(DockerResource):
         remove_links: bool = False,
         remove_volumes: bool = False,
     ) -> None:
+        """Remove the container.
+
+        Args:
+            force: If True, force removal of the container.
+            remove_links: If True, remove the specified link and not the
+            underlying container.
+            remove_volumes: If True, remove the volumes associated with the container.
+        """
         logger.info("Removing container %s...", self.resource_id[:12])
         params = {}
         if force:
@@ -311,9 +347,9 @@ class Container(DockerResource):
         encoding: str = "utf-8",
         errors: str = "ignore",
     ) -> str | Generator[str, None, None]:
-        """
-        Fetch container logs.
-        Equivalent to: docker logs
+        """Fetch container logs.
+
+        Equivalent to: `docker logs`
 
         Args:
             tail: Number of lines to show from the end of the logs.
@@ -321,6 +357,10 @@ class Container(DockerResource):
             follow: If True, stream logs as they happen (implies stream=True).
             encoding: Encoding to use for decoding logs.
             errors: Error handling strategy for decoding logs.
+
+        Returns:
+            The container logs as a string (if stream=False) or
+            a generator of strings (if stream=True).
         """
         params = {"stdout": "true", "stderr": "true", "tail": str(tail)}
         if follow:
@@ -366,9 +406,20 @@ class Container(DockerResource):
         encoding: str = "utf-8",
         errors: str = "ignore",
     ) -> str | Generator[str, None, None]:
-        """
-        Execute a command in a running container.
-        Equivalent to: docker exec
+        """Execute a command in a running container.
+
+        Equivalent to: `docker exec`
+
+        Args:
+            command: Command to execute.
+            detach: If True, run command in background.
+            tty: If True, allocate a pseudo-TTY.
+            stream: If True, stream the output.
+            encoding: Encoding to use for decoding output.
+            errors: Error handling strategy for decoding output.
+
+        Returns:
+            The output of the command (if not detached) or the exec ID.
         """
         payload: dict[str, Any] = {
             "AttachStdin": False,
@@ -454,8 +505,11 @@ class Container(DockerResource):
         return "".join(output)
 
     def put_archive(self, path: str, data: Any) -> None:
-        """
-        Upload a tar archive to a container.
+        """Upload a tar archive to a container.
+
+        Args:
+            path: Path in the container to extract the archive to.
+            data: The tar archive data as bytes.
         """
         query = urllib.parse.urlencode({"path": path})
 
@@ -471,9 +525,14 @@ class Container(DockerResource):
         )
 
     def get_archive(self, path: str) -> tuple[IO[bytes], dict[str, Any]]:
-        """
-        Download a tar archive from a container.
-        Returns a file-like object (stream) and the stat header info.
+        """Download a tar archive from a container.
+
+        Args:
+            path: Path in the container to download.
+
+        Returns:
+            A tuple containing the archive data (stream) and a
+            dictionary of file statistics.
         """
         query = urllib.parse.urlencode({"path": path})
         logger.debug("GET /containers/%s/archive?%s", self.resource_id, query)
@@ -493,8 +552,14 @@ class Container(DockerResource):
         return response, stat_info
 
     def copy_to(self, source_path: str, destination_path: str) -> None:
-        """
-        Copy a local file or directory into a container.
+        """Copy a local file or directory into a container.
+
+        Args:
+            source_path: Local path to the file or directory.
+            destination_path: Path in the container.
+
+        Raises:
+            FileNotFoundError: If the source path does not exist.
         """
         import os
 
@@ -514,8 +579,11 @@ class Container(DockerResource):
             temp_tar.close()
 
     def copy_from(self, source_path: str, destination_path: str) -> None:
-        """
-        Copy a file or directory from a container to the local filesystem.
+        """Copy a file or directory from a container to the local filesystem.
+
+        Args:
+            source_path: Path in the container to copy from.
+            destination_path: Local path to copy to.
         """
 
         logger.info(

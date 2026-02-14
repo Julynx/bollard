@@ -1,5 +1,7 @@
-"""
-API for Docker Engine
+"""API for Docker Engine.
+
+This package provides a Pythonic client for interacting
+with the Docker (or Podman) Engine API.
 """
 
 from .client import DockerClient

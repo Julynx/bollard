@@ -3,6 +3,16 @@
 A Pythonic, zero-dependency client for the Docker and Podman Engine APIs.  
 Prioritizes descriptive naming, context managers, and cross-platform ease of use.
 
+## Installation
+
+```bash
+pip install bollard
+```
+
+## Project Structure
+
+For a detailed overview of the project's architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Key Features
 
 - **Pythonic API**: `list_containers` instead of `ps`; `remove_image` instead of `rmi`.
@@ -11,6 +21,7 @@ Prioritizes descriptive naming, context managers, and cross-platform ease of use
 - **Windows Friendly**: Auto-starts the Podman machine on Windows if connection fails.
 - **Resource Safety**: Context managers for client connections and ephemeral containers.
 - **Streaming Output**: Real-time progress updates for long-running operations like pull and build.
+- **.dockerignore Support**: Respects `.dockerignore` files when building images.
 - **Full Lifecycle**: Manage Containers, Images, Networks, and Volumes.
 
 ## Usage
@@ -136,7 +147,7 @@ Execute Kubernetes YAML files directly using Podman's native `play kube` feature
 with DockerClient() as client:
     # Requires a valid Kubernetes YAML file (Pod, Deployment, etc.)
     result = client.play_kube("pod.yaml")
-    
+
     # Returns the JSON response from Podman describing created resources
     print("Created Pods:", result.get("Pods"))
 ```

@@ -1,3 +1,5 @@
+"""Volume module. Provides the Volume class for managing Docker volumes."""
+
 import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any, List
@@ -15,9 +17,15 @@ class Volume(DockerResource):
 
     @classmethod
     def list(cls, client: "DockerClient") -> List["Volume"]:
-        """
-        List volumes.
-        Equivalent to: docker volume ls
+        """List volumes.
+
+        Equivalent to: `docker volume ls`
+
+        Args:
+            client: The DockerClient instance.
+
+        Returns:
+            A list of Volume objects.
         """
         data = client._request("GET", "/volumes")
         volumes = data.get("Volumes") or []
@@ -27,9 +35,18 @@ class Volume(DockerResource):
     def create(
         cls, client: "DockerClient", name: str, driver: str = "local", **kwargs: Any
     ) -> "Volume":
-        """
-        Create a volume.
-        Equivalent to: docker volume create
+        """Create a volume.
+
+        Equivalent to: `docker volume create`
+
+        Args:
+            client: The DockerClient instance.
+            name: Name of the volume.
+            driver: Volume driver to use.
+            **kwargs: Additional arguments passed to volume creation.
+
+        Returns:
+            The created Volume object.
         """
         logger.info("Creating volume %s (driver=%s)...", name, driver)
         payload = {"Name": name, "Driver": driver, **kwargs}
@@ -38,16 +55,21 @@ class Volume(DockerResource):
 
     @property
     def name(self) -> str:
+        """The volume name."""
         return self.attrs.get("Name", "")
 
     @property
     def driver(self) -> str:
+        """The volume driver."""
         return self.attrs.get("Driver", "")
 
     def remove(self, force: bool = False) -> None:
-        """
-        Remove a volume.
-        Equivalent to: docker volume rm
+        """Remove the volume.
+
+        Equivalent to: `docker volume rm`
+
+        Args:
+            force: If True, force removal of the volume.
         """
         logger.info("Removing volume %s...", self.name)
         # Use name, not ID for volume
@@ -55,9 +77,12 @@ class Volume(DockerResource):
         self.client._request("DELETE", f"/volumes/{self.name}?{query}")
 
     def inspect(self) -> dict[str, Any]:
-        """
-        Inspect a volume.
-        Equivalent to: docker volume inspect
+        """Inspect the volume.
+
+        Equivalent to: `docker volume inspect`
+
+        Returns:
+            A dictionary containing volume attributes.
         """
         return self.client._request("GET", f"/volumes/{self.name}")  # type: ignore
 

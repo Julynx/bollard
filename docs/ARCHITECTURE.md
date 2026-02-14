@@ -20,6 +20,8 @@ src/bollard/
 ├── volume.py          # Volume resource model.
 ├── models.py          # Export facade for resource classes.
 ├── exceptions.py      # Custom exception hierarchy.
+├── progress.py        # Progress reporting for streaming operations.
+├── ignore.py          # .dockerignore parsing and matching.
 └── const.py           # Project-wide constants.
 ```
 
@@ -49,6 +51,21 @@ Classes representing Docker entities.
 - **Structure**: Inherit from `DockerResource`. Hold a reference to the `client` and the resource's raw attributes (`attrs`).
 - **Behavior**: Methods like `stop()`, `remove()` translate directly to API calls (e.g., `POST /containers/{id}/stop`).
 - **Lazy Loading**: Attributes are populated from the initial list/inspect call. `reload()` fetches fresh data.
+
+### 4. Progress Reporting (`progress.py`)
+
+Handles real-time progress updates from streaming operations (e.g., `pull`, `push`, `build`).
+
+- **DockerProgress**: Consumes a generator of JSON events from the Docker API.
+- **Output**: Logs progress messages to the standard logger (`logging.INFO`).
+- **Layer Tracking**: Tracks status of individual image layers during pull/push operations to avoidspamming the logs.
+
+### 5. Context Parsing (`ignore.py`)
+
+Implements `.dockerignore` support to exclude files from build contexts.
+
+- **DockerIgnore**: Parses `.dockerignore` files and provides `is_ignored(path)` method.
+- **Matching**: Uses `fnmatch` to approximate Docker's Go-based matching logic, handling negations (`!`) and wildcards.
 
 ## Data Flow
 

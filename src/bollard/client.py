@@ -22,13 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 class DockerClient:
-    """
-    A Pythonic client for the Docker/Podman Engine API.
+    """A Pythonic client for the Docker/Podman Engine API.
 
     Supports:
-    - Context Manager usage (`with DockerClient() as client:`)
-    - Auto-starting Podman machine on Windows if connection fails
-    - Ephemeral container contexts
+        - Context Manager usage (`with DockerClient() as client:`)
+        - Auto-starting Podman machine on Windows if connection fails
+        - Ephemeral container contexts
     """
 
     def __init__(self, socket_path: str | None = None) -> None:
@@ -43,10 +42,13 @@ class DockerClient:
         self._conn: UnixHttpConnection | None = None
 
     def _discover_windows_pipe(self) -> str:
-        """
-        Attempts to find a valid named pipe for Docker or Podman.
+        """Attempts to find a valid named pipe for Docker or Podman.
+
         Checks env vars DOCKER_HOST and DOCKER_SOCK first.
         If none are found, attempts to start the default Podman machine and retry.
+
+        Returns:
+            The path to the named pipe.
         """
         # 1. Check environment variables
         env_host = os.environ.get("DOCKER_HOST")
@@ -128,13 +130,20 @@ class DockerClient:
     def container(
         self, image: str, command: str | list[str] | None = None, **kwargs: Any
     ) -> Generator[Container, None, None]:
-        """
-        Context manager to run a container and ensure it is removed
-        (or stopped) on exit.
+        """Context manager to run a container and ensure it is
+        removed (or stopped) on exit.
 
         Usage:
             with client.container("alpine", "echo hello") as container:
                 logs = container.logs()
+
+        Args:
+            image: Image to run.
+            command: Command to run.
+            **kwargs: Additional arguments passed to `run_container`.
+
+        Yields:
+            The running Container object.
         """
         container = self.run_container(image, command=command, **kwargs)
         try:
@@ -263,9 +272,15 @@ class DockerClient:
             response.close()
 
     def list_containers(self, show_all: bool = False) -> list[Container]:
-        """
-        List containers.
-        Equivalent to: docker ps
+        """List containers.
+
+        Equivalent to: `docker ps`
+
+        Args:
+            show_all: If True, show all containers (including stopped ones).
+
+        Returns:
+            A list of Container objects.
         """
         return Container.list(self, show_all=show_all)
 
@@ -285,8 +300,25 @@ class DockerClient:
         ipc_mode: str | None = None,
         **kwargs: Any,
     ) -> Container:
-        """
-        Create and start a container.
+        """Create and start a container.
+
+        Args:
+            image: Image to run.
+            command: Command to run.
+            name: Name of the container.
+            detach: If True, run container in background.
+            tty: If True, allocate a pseudo-TTY.
+            stdin_open: If True, keep STDIN open even if not attached.
+            environment: Environment variables.
+            volumes: Volume mappings.
+            ports: Port mappings.
+            runtime: Runtime to use.
+            gpu: If True, enable GPU support.
+            ipc_mode: IPC mode.
+            **kwargs: Additional arguments passed to container creation.
+
+        Returns:
+            The started Container object.
         """
         return Container.run(
             self,
@@ -306,14 +338,27 @@ class DockerClient:
         )
 
     def stop_container(self, container_id: str, timeout: int = DEFAULT_TIMEOUT) -> Any:
-        """
-        Stop a container.
+        """Stop a container.
+
+        Args:
+            container_id: ID or name of the container.
+            timeout: Timeout in seconds to wait for the container
+            to stop before killing it.
+
+        Returns:
+            Response from the Docker API.
         """
         return Container(self, {"Id": container_id}).stop(timeout=timeout)
 
     def kill_container(self, container_id: str, signal: str = "SIGKILL") -> Any:
-        """
-        Kill a container.
+        """Kill a container.
+
+        Args:
+            container_id: ID or name of the container.
+            signal: Signal to send to the container.
+
+        Returns:
+            Response from the Docker API.
         """
         return Container(self, {"Id": container_id}).kill(signal=signal)
 
@@ -330,14 +375,25 @@ class DockerClient:
     def pull_image(
         self, image_name: str, progress: bool = False
     ) -> Generator[dict[str, Any], None, None] | Image:
-        """
-        Pull an image.
+        """Pull an image.
+
+        Args:
+            image_name: Name of the image to pull.
+            progress: If True, returns a generator illustrating progress.
+
+        Returns:
+            The pulled Image object, or a generator if progress is True.
         """
         return Image.pull(self, image_name, progress=progress)
 
     def list_images(self, show_all: bool = False) -> list[Image]:
-        """
-        List images.
+        """List images.
+
+        Args:
+            show_all: If True, show all images.
+
+        Returns:
+            A list of Image objects.
         """
         return Image.list(self, show_all=show_all)
 
@@ -354,14 +410,27 @@ class DockerClient:
     def build_image(
         self, path: str, tag: str, progress: bool = False
     ) -> Generator[dict[str, Any], None, None] | Image:
-        """
-        Build an image from a directory.
+        """Build an image from a directory.
+
+        Args:
+            path: Path to the directory containing the Dockerfile.
+            tag: Tag to apply to the built image.
+            progress: If True, returns a generator illustrating progress.
+
+        Returns:
+            The built Image object, or a generator if progress is True.
         """
         return Image.build(self, path, tag, progress=progress)
 
     def remove_image(self, image: str, force: bool = False) -> Any:
-        """
-        Remove an image.
+        """Remove an image.
+
+        Args:
+            image: ID or name of the image.
+            force: If True, force removal of the image.
+
+        Returns:
+            Response from the Docker API.
         """
         return Image(self, {"Id": image}).remove(force=force)
 
@@ -372,30 +441,53 @@ class DockerClient:
         remove_links: bool = False,
         remove_volumes: bool = False,
     ) -> Any:
-        """
-        Remove a container.
+        """Remove a container.
+
+        Args:
+            container_id: ID or name of the container.
+            force: If True, force removal of the container.
+            remove_links: If True, remove the specified link and
+            not the underlying container.
+            remove_volumes: If True, remove the volumes associated with the container.
+
+        Returns:
+            Response from the Docker API.
         """
         return Container(self, {"Id": container_id}).remove(
             force=force, remove_links=remove_links, remove_volumes=remove_volumes
         )
 
     def start_container(self, container_id: str) -> Any:
-        """
-        Start a container.
+        """Start a container.
+
+        Args:
+            container_id: ID or name of the container.
+
+        Returns:
+            Response from the Docker API.
         """
         return Container(self, {"Id": container_id}).start()
 
     def restart_container(
         self, container_id: str, timeout: int = DEFAULT_TIMEOUT
     ) -> None:
-        """
-        Restart a container.
+        """Restart a container.
+
+        Args:
+            container_id: ID or name of the container.
+            timeout: Timeout in seconds to wait for the container
+            to stop before restarting.
         """
         return Container(self, {"Id": container_id}).restart(timeout=timeout)
 
     def inspect_container(self, container_id: str) -> dict[str, Any]:
-        """
-        Inspect a container.
+        """Inspect a container.
+
+        Args:
+            container_id: ID or name of the container.
+
+        Returns:
+            A dictionary containing container attributes.
         """
         # Reload fetches inspect data
         container = Container(self, {"Id": container_id})
@@ -403,9 +495,18 @@ class DockerClient:
         return container.attrs
 
     def play_kube(self, path: str) -> dict[str, Any]:
-        """
-        Play a Kubernetes YAML file using Podman.
-        Equivalent to: podman play kube <path>
+        """Play a Kubernetes YAML file using Podman.
+
+        Equivalent to: `podman play kube <path>`
+
+        Args:
+            path: Path to the Kubernetes YAML file.
+
+        Returns:
+            Response from the Podman API.
+
+        Raises:
+            FileNotFoundError: If the YAML file does not exist.
         """
         if not os.path.exists(path):
             raise FileNotFoundError(f"YAML file not found: {path}")
@@ -417,8 +518,14 @@ class DockerClient:
         return self._request("POST", "/libpod/play/kube", body=payload)
 
     def get_container_logs(self, container_id: str, tail: str | int = "all") -> str:
-        """
-        Fetch container logs.
+        """Fetch container logs.
+
+        Args:
+            container_id: ID or name of the container.
+            tail: Number of lines to show from the end of the logs.
+
+        Returns:
+            The container logs as a string.
         """
         return Container(self, {"Id": container_id}).logs(tail=tail)
 
@@ -429,95 +536,156 @@ class DockerClient:
         detach: bool = False,
         tty: bool = False,
     ) -> str:
-        """
-        Execute a command in a running container.
+        """Execute a command in a running container.
+
+        Args:
+            container_id: ID or name of the container.
+            command: Command to execute.
+            detach: If True, run command in background.
+            tty: If True, allocate a pseudo-TTY.
+
+        Returns:
+            The output of the command (if not detached) or the exec ID.
         """
         return Container(self, {"Id": container_id}).exec(
             command, detach=detach, tty=tty
         )
 
     def list_networks(self) -> list[Network]:
-        """
-        List networks.
+        """List networks.
+
+        Returns:
+            A list of Network objects.
         """
         return Network.list(self)
 
     def create_network(
         self, name: str, driver: str = "bridge", **kwargs: Any
     ) -> Network:
-        """
-        Create a network.
+        """Create a network.
+
+        Args:
+            name: Name of the network.
+            driver: Network driver to use.
+            **kwargs: Additional arguments passed to network creation.
+
+        Returns:
+            The created Network object.
         """
         return Network.create(self, name, driver=driver, **kwargs)
 
     def remove_network(self, network_id: str) -> None:
-        """
-        Remove a network.
+        """Remove a network.
+
+        Args:
+            network_id: ID or name of the network.
         """
         return Network(self, {"Id": network_id}).remove()
 
     def inspect_network(self, network_id: str) -> Any:
-        """
-        Inspect a network.
+        """Inspect a network.
+
+        Args:
+            network_id: ID or name of the network.
+
+        Returns:
+            A dictionary containing network attributes.
         """
         return Network(self, {"Id": network_id}).inspect()
 
     def list_volumes(self) -> list[Volume]:
-        """
-        List volumes.
+        """List volumes.
+
+        Returns:
+            A list of Volume objects.
         """
         return Volume.list(self)
 
     def create_volume(self, name: str, driver: str = "local", **kwargs: Any) -> Volume:
-        """
-        Create a volume.
+        """Create a volume.
+
+        Args:
+            name: Name of the volume.
+            driver: Volume driver to use.
+            **kwargs: Additional arguments passed to volume creation.
+
+        Returns:
+            The created Volume object.
         """
         return Volume.create(self, name, driver=driver, **kwargs)
 
     def remove_volume(self, name: str, force: bool = False) -> None:
-        """
-        Remove a volume.
+        """Remove a volume.
+
+        Args:
+            name: Name of the volume.
+            force: If True, force removal of the volume.
         """
         return Volume(self, {"Name": name}).remove(force=force)
 
     def inspect_volume(self, name: str) -> Any:
-        """
-        Inspect a volume.
+        """Inspect a volume.
+
+        Args:
+            name: Name of the volume.
+
+        Returns:
+            A dictionary containing volume attributes.
         """
         return Volume(self, {"Name": name}).inspect()
 
     def put_archive(self, container_id: str, path: str, data: bytes) -> None:
-        """
-        Upload a tar archive to a container.
+        """Upload a tar archive to a container.
+
+        Args:
+            container_id: ID or name of the container.
+            path: Path in the container to extract the archive to.
+            data: The tar archive data as bytes.
         """
         Container(self, {"Id": container_id}).put_archive(path, data)
 
     def get_archive(self, container_id: str, path: str) -> tuple[bytes, dict[str, Any]]:
-        """
-        Download a tar archive from a container.
+        """Download a tar archive from a container.
+
+        Args:
+            container_id: ID or name of the container.
+            path: Path in the container to download.
+
+        Returns:
+            A tuple containing the archive data (bytes) and
+            a dictionary of file statistics.
         """
         return Container(self, {"Id": container_id}).get_archive(path)
 
     def copy_to_container(
         self, container_id: str, source_path: str, destination_path: str
     ) -> None:
-        """
-        Copy a local file or directory into a container.
+        """Copy a local file or directory into a container.
+
+        Args:
+            container_id: ID or name of the container.
+            source_path: Local path to the file or directory.
+            destination_path: Path in the container.
         """
         Container(self, {"Id": container_id}).copy_to(source_path, destination_path)
 
     def copy_from_container(
         self, container_id: str, source_path: str, destination_path: str
     ) -> None:
-        """
-        Copy a file or directory from a container to the local filesystem.
+        """Copy a file or directory from a container to the local filesystem.
+
+        Args:
+            container_id: ID or name of the container.
+            source_path: Path in the container to copy from.
+            destination_path: Local path to copy to.
         """
         Container(self, {"Id": container_id}).copy_from(source_path, destination_path)
 
     def load_docker_config(self) -> dict[str, Any]:
-        """
-        Load Docker configuration from default locations or DOCKER_CONFIG.
-        Returns the 'auths' section of the config.
+        """Load Docker configuration from default locations or DOCKER_CONFIG.
+
+        Returns:
+            The 'auths' section of the config, or an empty dictionary if not found.
         """
         config_path = os.environ.get("DOCKER_CONFIG")
         if not config_path:
@@ -562,8 +730,17 @@ class DockerClient:
         auth_config: dict[str, str] | None = None,
         progress: bool = False,
     ) -> Generator[dict[str, Any], None, None] | list[dict[str, Any]]:
-        """
-        Push an image.
+        """Push an image.
+
+        Args:
+            image: Name of the image to push.
+            tag: Optional tag to push.
+            auth_config: Optional authentication configuration.
+            progress: If True, returns a generator illustrating progress.
+
+        Returns:
+            A list of events (if progress is False) or
+            a generator (if progress is True).
         """
         return Image(self, {"Id": image}).push(
             tag=tag, auth_config=auth_config, progress=progress
