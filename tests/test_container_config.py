@@ -19,12 +19,18 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
     except Exception:
         pass
 
+    import sys
+
+    # On Linux/Podman, we often need :Z to allow the container to read/write the file
+    # due to SELinux labeling.
+    mount_suffix = ":Z" if sys.platform == "linux" else ""
+
     try:
         with docker_client.container(
             image,
             command="sleep 60",
             environment=env,
-            volumes={str(vol_file): container_path},
+            volumes={str(vol_file): container_path + mount_suffix},
             ports={8000: 8081},
         ) as container:
             # 1. Verify Env

@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any, Generator, Literal, overload
 
 from .const import DEFAULT_TIMEOUT
@@ -35,7 +36,7 @@ class DockerClient:
             if sys.platform == "win32":
                 self.socket_path = self._discover_windows_pipe()
             else:
-                self.socket_path = "/var/run/docker.sock"
+                self.socket_path = self._discover_linux_socket()
         else:
             self.socket_path = socket_path
 
@@ -99,6 +100,37 @@ class DockerClient:
 
         # Default fallback if all else fails
         return candidates[0]
+
+    def _discover_linux_socket(self) -> str:
+        """Returns the location of the socket for the current user on Linux.
+
+        Checks for DOCKER_HOST environment variable, then checks for podman
+        and docker sockets.
+
+        Returns:
+            The path to the socket.
+        """
+        if os.environ.get("DOCKER_HOST"):
+            return os.environ.get("DOCKER_HOST")
+        podman_socket = Path(f"/run/user/{os.getuid()}/podman/podman.sock")
+        if podman_socket.exists():
+            # Check if the systemd daemon is running, if not, start it
+            if (
+                subprocess.run(
+                    ["systemctl", "--user", "is-active", "podman.socket"],
+                    check=False,
+                    capture_output=True,
+                ).returncode
+                != 0
+            ):
+                subprocess.run(
+                    ["systemctl", "--user", "enable", "--now", "podman.socket"],
+                    check=True,
+                    capture_output=True,
+                )
+            return str(podman_socket)
+        docker_socket = Path("/run/docker.sock")
+        return str(docker_socket)
 
     def _check_pipe(self, pipe: str) -> bool:
         try:
