@@ -86,7 +86,7 @@ The client iterates through a list of candidate pipes (`docker_engine`, `podman-
 
 ### Streaming Responses
 
-Operations like `pull_image` return Python **Generators**. The client reads the HTTP response line-by-line, decoding JSON objects as they arrive, enabling real-time progress bars without buffering the entire response.
+Operations like `pull_image`, `build_image`, and `push_image` return Python **Generators** when called with `progress=True`. The client reads the HTTP response line-by-line, decoding JSON objects as they arrive, enabling real-time progress bars without buffering the entire response.
 
 ### Ephemeral Containers
 

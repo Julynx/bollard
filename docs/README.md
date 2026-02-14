@@ -1,6 +1,6 @@
 # Bollard
 
-A Pythonic, zero-dependency client for the Docker and Podman Engine APIs.  
+A Pythonic, zero-dependency client for the Docker and Podman Engine APIs.
 Prioritizes descriptive naming, context managers, and cross-platform ease of use.
 
 ## Installation
@@ -62,17 +62,17 @@ with DockerClient() as client:
 
 ### Streaming Image Operations
 
-Operations like `pull_image`, `build_image`, and `push_image` return a generator that yields progress updates.
+Methods `pull_image`, `build_image`, and `push_image`, when called with `progress=True`, return a generator that yields progress updates.
 
 ```python
 with DockerClient() as client:
     # Pull an image with progress
-    for progress in client.pull_image("alpine:latest"):
+    for progress in client.pull_image("alpine:latest", progress=True):
         if "status" in progress:
             print(f"{progress['status']} {progress.get('progress', '')}")
 
     # Build from directory
-    for log in client.build_image(".", "my-app:latest"):
+    for log in client.build_image(".", "my-app:latest", progress=True):
         if "stream" in log:
             print(log["stream"], end="")
 ```
@@ -118,8 +118,7 @@ from time import sleep
 
 env = {"SECURITY_ENABLE_LOGIN": "false"}
 
-with DockerClient() as docker:
-    with docker.container("frooodle/s-pdf", environment=env) as container:
+with DockerClient().container("frooodle/s-pdf", environment=env) as container:
         # Wait for the container to be ready
         res = ""
         while "HTTP" not in res:
