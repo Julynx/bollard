@@ -15,6 +15,7 @@ def test_list_images(docker_client: DockerClient) -> None:
         assert found, "busybox image should be present after pull"
     finally:
         try:
-            docker_client.remove_image(image_name)
+            # docker_client.remove_image(image_name)
+            pass
         except Exception:
             pass

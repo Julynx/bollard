@@ -36,6 +36,7 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
             assert "from_host" in out.strip()
     finally:
         try:
-            docker_client.remove_image(image)
+            # docker_client.remove_image(image)
+            pass
         except Exception:
             pass

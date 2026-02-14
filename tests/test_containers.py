@@ -45,7 +45,8 @@ def test_container_actions(docker_client: DockerClient, random_name: str) -> Non
     finally:
         container.remove(force=True)
         try:
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
+            pass
         except Exception:
             pass
 
@@ -63,6 +64,7 @@ def test_exec(docker_client: DockerClient) -> None:
             assert "mux" in out_mux
     finally:
         try:
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
+            pass
         except Exception:
             pass

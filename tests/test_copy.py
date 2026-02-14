@@ -46,6 +46,7 @@ def test_copy_operations(docker_client: DockerClient, tmp_path) -> None:
             assert (dest_dir / "file.txt").read_text().strip() == "in dir"
     finally:
         try:
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
+            pass
         except Exception:
             pass

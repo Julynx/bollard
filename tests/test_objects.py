@@ -27,6 +27,7 @@ def test_container_lifecycle(docker_client: DockerClient) -> None:
         # 4. Cleanup
         container.remove(force=True)
         try:
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
+            pass
         except Exception:
             pass

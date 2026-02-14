@@ -71,6 +71,7 @@ def test_stirling_pdf_conversion(docker_client: DockerClient):
                     os.remove("test.pdf")
     finally:
         try:
-            docker_client.remove_image(image)
+            # docker_client.remove_image(image)
+            pass
         except Exception:
             pass

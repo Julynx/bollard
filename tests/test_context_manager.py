@@ -22,6 +22,7 @@ def test_container_context_manager(docker_client: DockerClient) -> None:
         pass
     finally:
         try:
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
+            pass
         except Exception:
             pass

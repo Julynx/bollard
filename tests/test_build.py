@@ -41,6 +41,6 @@ def test_build_image(docker_client: DockerClient, random_name: str, tmp_path) ->
     finally:
         try:
             docker_client.remove_image(image_tag)
-            docker_client.remove_image("alpine:latest")
+            # docker_client.remove_image("alpine:latest")
         except Exception:
             pass
