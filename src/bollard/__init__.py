@@ -4,14 +4,14 @@ This package provides a Pythonic client for interacting
 with the Docker (or Podman) Engine API.
 """
 
+import logging
+import sys
+
 from .client import DockerClient
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 
 __all__ = ["DockerClient", "DockerException", "Container", "Image", "Network", "Volume"]
-
-import logging
-import sys
 
 # Configure logging for the entire package
 logger = logging.getLogger(__name__)

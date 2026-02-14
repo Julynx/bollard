@@ -203,18 +203,20 @@ class DockerClient:
             except (AttributeError, OSError):
                 pass
             return body
-        elif body:
+
+        if body:
             if isinstance(body, dict):
                 json_body = json.dumps(body)
                 headers["Content-Type"] = "application/json"
                 headers["Content-Length"] = str(len(json_body))
                 return json_body
-            else:
-                if isinstance(body, str):
-                    headers["Content-Length"] = str(len(body))
-                elif isinstance(body, bytes):
-                    headers["Content-Length"] = str(len(body))
-                return body
+
+            if isinstance(body, str):
+                headers["Content-Length"] = str(len(body))
+            elif isinstance(body, bytes):
+                headers["Content-Length"] = str(len(body))
+            return body
+
         return None
 
     def _request(
@@ -232,6 +234,7 @@ class DockerClient:
         body_to_send = self._prepare_request_body(body, headers)
         headers["Connection"] = "close"
 
+        http_error = 400
         try:
             conn.request(method, endpoint, body=body_to_send, headers=headers)
             response = conn.getresponse()
@@ -243,7 +246,7 @@ class DockerClient:
             response = conn.getresponse()
 
         if stream:
-            if response.status >= 400:
+            if response.status >= http_error:
                 data = response.read().decode("utf-8")
                 raise DockerException(f"Docker API Error ({response.status}): {data}")
             return response
@@ -258,7 +261,7 @@ class DockerClient:
 
             data = response.read().decode("utf-8")
 
-            if response.status < 400:
+            if response.status < http_error:
                 if response.getheader("Content-Type") == "application/json":
                     return json.loads(data)
                 try:
@@ -278,8 +281,9 @@ class DockerClient:
         Helper to stream JSON objects from a Docker API response.
         Yields decoded JSON objects.
         """
+        http_error = 400
         try:
-            if response.status >= 400:
+            if response.status >= http_error:
                 data = response.read().decode("utf-8")
                 raise DockerException(f"Docker API Error ({response.status}): {data}")
 

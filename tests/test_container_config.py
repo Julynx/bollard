@@ -1,3 +1,5 @@
+import sys
+
 from bollard import DockerClient
 
 
@@ -18,8 +20,6 @@ def test_container_configuration(docker_client: DockerClient, tmp_path) -> None:
         docker_client.pull_image(image)
     except Exception:
         pass
-
-    import sys
 
     # On Linux/Podman, we often need :Z to allow the container to read/write the file
     # due to SELinux labeling.

@@ -9,10 +9,6 @@ from bollard import DockerClient
 @pytest.fixture
 def docker_client() -> Generator[DockerClient, None, None]:
     """Fixture to provide a DockerClient instance and handle cleanup."""
-    import bollard
-
-    _ = bollard.__file__
-
     with DockerClient() as client:
         yield client
 

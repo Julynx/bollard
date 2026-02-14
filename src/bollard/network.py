@@ -77,7 +77,10 @@ class Network(DockerResource):
         Returns:
             A dictionary containing network attributes.
         """
-        return self.client._request("GET", f"/networks/{self.resource_id}")  # type: ignore
+        return self.client._request(
+            "GET",
+            f"/networks/{self.resource_id}",
+        )  # type: ignore
 
     def __repr__(self) -> str:
         return f"<Network: {self.name}>"

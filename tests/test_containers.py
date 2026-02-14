@@ -11,7 +11,7 @@ def test_container_actions(docker_client: DockerClient, random_name: str) -> Non
     )
 
     try:
-        assert container.status == "running" or container.status == "created"
+        assert container.status in {"running", "created"}
 
         # Stop
         container.stop()

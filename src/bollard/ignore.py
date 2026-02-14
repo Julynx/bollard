@@ -2,6 +2,7 @@
 Handles .dockerignore parsing and matching rule generation.
 """
 
+import fnmatch
 import os
 from typing import List
 
@@ -26,10 +27,10 @@ class DockerIgnore:
 
         with open(ignore_path, "r", encoding="utf-8") as file_obj:
             for line in file_obj:
-                line = line.strip()
-                if not line or line.startswith("#"):
+                new_line = line.strip()
+                if not new_line or new_line.startswith("#"):
                     continue
-                self.patterns.append(line)
+                self.patterns.append(new_line)
 
     def is_ignored(self, path: str) -> bool:
         """
@@ -42,8 +43,6 @@ class DockerIgnore:
         # In Docker, "!" negates a previous match.
         # We iterate patterns in order.
         ignored = False
-
-        import fnmatch
 
         for pattern in self.patterns:
             # Handle negation

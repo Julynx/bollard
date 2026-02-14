@@ -1,3 +1,5 @@
+"""Progress module. Handles Docker progress events."""
+
 import logging
 from typing import Any, Dict, Generator, List
 
@@ -19,13 +21,9 @@ class DockerProgress:
         and returns the collected events.
         """
         events: List[Dict[str, Any]] = []
-        try:
-            for event in self.generator:
-                events.append(event)
-                self._handle_event(event)
-
-        except Exception:
-            raise
+        for event in self.generator:
+            events.append(event)
+            self._handle_event(event)
 
         return events
 

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, List, Literal, overload
 
 from .docker_resource import DockerResource
 from .ignore import DockerIgnore
+from .progress import DockerProgress
 from .transport import UnixHttpConnection
 
 if TYPE_CHECKING:
@@ -79,8 +80,6 @@ class Image(DockerResource):
 
         if progress:
             return generator
-
-        from .progress import DockerProgress
 
         DockerProgress(generator).consume()
         return cls(client, {"Id": image_name})
@@ -160,8 +159,6 @@ class Image(DockerResource):
             if progress:
                 return generator
 
-            from .progress import DockerProgress
-
             events = DockerProgress(generator).consume()
 
             image_id = tag
@@ -238,8 +235,6 @@ class Image(DockerResource):
 
         if progress:
             return generator
-
-        from .progress import DockerProgress
 
         return DockerProgress(generator).consume()
 

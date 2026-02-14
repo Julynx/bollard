@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import os
 import shlex
 import tarfile
 import tempfile
@@ -12,6 +13,7 @@ from typing import IO, TYPE_CHECKING, Any, Generator, List
 from .const import DEFAULT_KILL_SIGNAL, DEFAULT_TIMEOUT
 from .docker_resource import DockerResource
 from .exceptions import DockerException
+from .image import Image
 
 if TYPE_CHECKING:
     from .client import DockerClient
@@ -48,7 +50,6 @@ class Container(DockerResource):
         image: str,
         command: str | List[str] | None = None,
         name: str | None = None,
-        detach: bool = True,
         tty: bool = True,
         stdin_open: bool = True,
         environment: dict[str, str] | None = None,
@@ -68,7 +69,6 @@ class Container(DockerResource):
             image: Image to run.
             command: Command to run.
             name: Name of the container.
-            detach: If True, run container in background.
             tty: If True, allocate a pseudo-TTY.
             stdin_open: If True, keep STDIN open even if not attached.
             environment: Environment variables.
@@ -193,11 +193,13 @@ class Container(DockerResource):
         """Format ports for ExposedPorts and PortBindings."""
         exposed_ports = {}
         port_bindings = {}
+
         for container_port, host_port in ports.items():
+            formatted_port = container_port
             if "/" not in str(container_port):
-                container_port = f"{container_port}/tcp"
-            exposed_ports[container_port] = {}
-            port_bindings[container_port] = [{"HostPort": str(host_port)}]
+                formatted_port = f"{container_port}/tcp"
+            exposed_ports[formatted_port] = {}
+            port_bindings[formatted_port] = [{"HostPort": str(host_port)}]
         return exposed_ports, port_bindings
 
     @classmethod
@@ -214,7 +216,6 @@ class Container(DockerResource):
         except DockerException as e:
             if "404" in str(e):
                 logger.info("Image '%s' not found, pulling...", image)
-                from .image import Image
 
                 Image.pull(client, image)
                 logger.info("Image pulled successfully. Retrying container creation...")
@@ -299,6 +300,7 @@ class Container(DockerResource):
         )
 
     def start(self) -> None:
+        """Start the container."""
         logger.info("Starting container %s...", self.resource_id[:12])
         self.client._request("POST", f"/containers/{self.resource_id}/start")
 
@@ -449,18 +451,16 @@ class Container(DockerResource):
                 return self._stream_log_response(
                     response, encoding=encoding, errors=errors
                 )
-            else:
-                return self._stream_multiplexed(
-                    response, encoding=encoding, errors=errors
-                )
+
+            return self._stream_multiplexed(response, encoding=encoding, errors=errors)
 
         try:
             if tty:
                 return response.read().decode(encoding, errors=errors)
-            else:
-                return self._read_multiplexed_response(
-                    response, encoding=encoding, errors=errors
-                )
+
+            return self._read_multiplexed_response(
+                response, encoding=encoding, errors=errors
+            )
         finally:
             response.close()
 
@@ -470,10 +470,15 @@ class Container(DockerResource):
         """Generator for multiplexed streams."""
         try:
             while True:
-                header = response.read(8)
-                if not header or len(header) < 8:
+                header_length = 8
+                header_size_idx = 4
+                header = response.read(header_length)
+                if not header or len(header) < header_length:
                     break
-                payload_size = int.from_bytes(header[4:8], "big")
+                payload_size = int.from_bytes(
+                    header[header_size_idx:header_length],
+                    "big",
+                )
                 payload = response.read(payload_size)
                 if not payload:
                     break
@@ -489,17 +494,22 @@ class Container(DockerResource):
         """
         output = []
         while True:
-            header = response.read(8)
-            if not header:
-                break
-            if len(header) < 8:
+            header_length = 8
+            header_size_idx = 4
+            header = response.read(header_length)
+            if not header or len(header) < header_length:
                 break
 
             stream_type = header[0]
-            payload_size = int.from_bytes(header[4:8], "big")
+            payload_size = int.from_bytes(
+                header[header_size_idx:header_length],
+                "big",
+            )
 
             payload = response.read(payload_size)
-            if stream_type in (1, 2):  # stdout or stderr
+            stdout = 1
+            stderr = 2
+            if stream_type in (stdout, stderr):
                 output.append(payload.decode(encoding, errors=errors))
 
         return "".join(output)
@@ -561,7 +571,6 @@ class Container(DockerResource):
         Raises:
             FileNotFoundError: If the source path does not exist.
         """
-        import os
 
         source_path = os.path.abspath(source_path)
         if not os.path.exists(source_path):
