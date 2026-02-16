@@ -51,11 +51,11 @@ with DockerClient() as client:
 
 ### Ephemeral Containers (Auto-Cleanup)
 
-Use `ephemeral_container` to automatically remove the container after the block exits, even if errors occur.
+Use `with client.container(...)` to automatically remove the container after the block exits, even if errors occur.
 
 ```python
 with DockerClient() as client:
-    with client.ephemeral_container("alpine", command="sleep 60") as container:
+    with client.container("alpine", command="sleep 60") as container:
         container.exec(["echo", "Running inside container"])
     # Container is automatically removed
 ```
@@ -100,7 +100,7 @@ Copy files and directories in and out of containers directly from the `Container
 
 ```python
 with DockerClient() as client:
-    with client.ephemeral_container("alpine:latest", command="sleep 60") as container:
+    with client.container("alpine:latest", command="sleep 60") as container:
         # Copy host -> container
         container.copy_to("local_data/", "/dest/path/")
 
