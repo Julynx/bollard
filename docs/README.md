@@ -54,8 +54,7 @@ with DockerClient() as client:
 Use `with client.container(...)` to automatically remove the container after the block exits, even if errors occur.
 
 ```python
-with DockerClient() as client:
-    with client.container("alpine", command="sleep 60") as container:
+with DockerClient().container("alpine") as container:
         container.exec(["echo", "Running inside container"])
     # Container is automatically removed
 ```
