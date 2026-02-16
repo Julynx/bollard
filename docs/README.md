@@ -55,7 +55,7 @@ Use `with client.container(...)` to automatically remove the container after the
 
 ```python
 with DockerClient().container("alpine") as container:
-        container.exec(["echo", "Running inside container"])
+    container.exec(["echo", "Running inside container"])
     # Container is automatically removed
 ```
 
