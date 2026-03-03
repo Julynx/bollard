@@ -18,7 +18,7 @@ For a detailed overview of the project's architecture, see [ARCHITECTURE.md](ARC
 - **Pythonic API**: `list_containers` instead of `ps`; `remove_image` instead of `rmi`.
 - **Zero Dependencies**: Uses only the Python standard library (`http.client`, `socket`, `json`).
 - **Smart Connection**: Auto-detects Docker/Podman sockets (Unix, Windows Pipes, `DOCKER_HOST`).
-- **Windows Friendly**: Auto-starts the Podman machine on Windows if connection fails.
+- **User Friendly**: Auto-starts the Podman machine if the connection fails.
 - **Resource Safety**: Context managers for client connections and ephemeral containers.
 - **Streaming Output**: Real-time progress updates for long-running operations like pull and build.
 - **.dockerignore Support**: Respects `.dockerignore` files when building images.
