@@ -112,25 +112,24 @@ class DockerClient:
         """
         if os.environ.get("DOCKER_HOST"):
             return os.environ.get("DOCKER_HOST")
+
         podman_socket = Path(f"/run/user/{os.getuid()}/podman/podman.sock")
+
+        # Try activating the Podman user socket via systemd first
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", "podman.socket"],
+            check=False,
+            capture_output=True,
+        )
+
         if podman_socket.exists():
-            # Check if the systemd daemon is running, if not, start it
-            if (
-                subprocess.run(
-                    ["systemctl", "--user", "is-active", "podman.socket"],
-                    check=False,
-                    capture_output=True,
-                ).returncode
-                != 0
-            ):
-                subprocess.run(
-                    ["systemctl", "--user", "enable", "--now", "podman.socket"],
-                    check=True,
-                    capture_output=True,
-                )
             return str(podman_socket)
+
         docker_socket = Path("/run/docker.sock")
-        return str(docker_socket)
+        if docker_socket.exists():
+            return str(docker_socket)
+
+        raise FileNotFoundError("Neither Podman nor Docker socket could be found.")
 
     def _check_pipe(self, pipe: str) -> bool:
         try:
