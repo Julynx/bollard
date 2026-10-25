@@ -545,7 +545,9 @@ class Container(DockerResource):
             dictionary of file statistics.
         """
         query = urllib.parse.urlencode({"path": path})
-        logger.debug("GET /containers/%s/archive?%s", self.resource_id, query)
+        logging.getLogger("bollard.wire").debug(
+            "GET /containers/%s/archive?%s", self.resource_id, query
+        )
 
         response = self.client._request(
             "GET", f"/containers/{self.resource_id}/archive?{query}", stream=True

@@ -13,13 +13,15 @@ import time
 from pathlib import Path
 from typing import Any, Generator, Literal, overload
 
-from .const import DEFAULT_TIMEOUT
+from .const import DEFAULT_TIMEOUT, PIPE_WAIT_TIMEOUT_S, PODMAN_COMMAND_TIMEOUT_S
+from .const import WINDOWS_PIPE_CANDIDATES
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 from .transport import UnixHttpConnection
 
 # Configure logging
 logger = logging.getLogger(__name__)
+wire_logger = logging.getLogger("bollard.wire")
 
 
 class DockerClient:
@@ -27,7 +29,8 @@ class DockerClient:
 
     Supports:
         - Context Manager usage (`with DockerClient() as client:`)
-        - Auto-starting Podman machine on Windows if connection fails
+        - Auto-starting (and initializing) the Podman machine when its
+          API endpoint is missing
         - Ephemeral container contexts
     """
 
@@ -35,6 +38,8 @@ class DockerClient:
         if socket_path is None:
             if sys.platform == "win32":
                 self.socket_path = self._discover_windows_pipe()
+            elif sys.platform == "darwin":
+                self.socket_path = self._discover_macos_socket()
             else:
                 self.socket_path = self._discover_linux_socket()
         else:
@@ -45,11 +50,16 @@ class DockerClient:
     def _discover_windows_pipe(self) -> str:
         """Attempts to find a valid named pipe for Docker or Podman.
 
-        Checks env vars DOCKER_HOST and DOCKER_SOCK first.
-        If none are found, attempts to start the default Podman machine and retry.
+        Checks env vars DOCKER_HOST and DOCKER_SOCK first. If none are
+        found, probes the known engine pipes, brings the Podman machine
+        up when needed (initializing it first if it does not exist yet),
+        and probes again until the wait deadline.
 
         Returns:
             The path to the named pipe.
+
+        Raises:
+            FileNotFoundError: If no engine endpoint became reachable.
         """
         # 1. Check environment variables
         env_host = os.environ.get("DOCKER_HOST")
@@ -64,42 +74,29 @@ class DockerClient:
             logger.info("Connected via DOCKER_SOCK: %s", env_sock)
             return env_sock
 
-        candidates = [
-            r"\\.\pipe\docker_engine",
-            r"\\.\pipe\podman-machine-default",
-            r"\\.\pipe\podman-machine",
-            r"\\.\pipe\docker_cli",
-        ]
-
         # 2. Try to find an existing pipe
-        for pipe in candidates:
-            if self._check_pipe(pipe):
-                logger.info("Connected to Docker/Podman via %s", pipe)
-                return pipe
+        found = self._wait_for_pipe(0.0)
+        if found:
+            logger.info("Connected to Docker/Podman via %s", found)
+            return found
 
-        # 3. If no pipe found, try starting Podman
+        # 3. Bring the Podman machine up, then wait for its endpoint
         logger.info(
-            "No active Docker/Podman pipe found. Attempting to start Podman machine..."
+            "No active Docker/Podman pipe found. Starting the Podman machine..."
         )
-        try:
-            subprocess.run(
-                ["podman", "machine", "start"], check=True, capture_output=True
-            )
-            logger.info("Podman machine started successfully. Retrying connection...")
+        failure = self._bring_up_podman_machine()
+        found = self._wait_for_pipe(PIPE_WAIT_TIMEOUT_S)
+        if found:
+            logger.info("Connected to Docker/Podman via %s", found)
+            return found
 
-            # Give it a moment to initialize the pipe
-            for _ in range(5):
-                time.sleep(1)
-                for pipe in candidates:
-                    if self._check_pipe(pipe):
-                        logger.info("Connected to Docker/Podman via %s", pipe)
-                        return pipe
-
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logger.warning("Failed to auto-start Podman machine.")
-
-        # Default fallback if all else fails
-        return candidates[0]
+        raise FileNotFoundError(
+            "No Docker or Podman API endpoint is reachable. The Podman"
+            " machine could not be started."
+            + (f" The last attempt said: {failure}" if failure else "")
+            + " Check that virtualization is enabled and try running"
+            " `podman machine start` in a terminal for details."
+        )
 
     def _discover_linux_socket(self) -> str:
         """Returns the location of the socket for the current user on Linux.
@@ -130,6 +127,121 @@ class DockerClient:
             return str(docker_socket)
 
         raise FileNotFoundError("Neither Podman nor Docker socket could be found.")
+
+    def _discover_macos_socket(self) -> str:
+        """Returns the location of the socket on macOS.
+
+        Checks DOCKER_HOST, common Docker Desktop locations, and the
+        socket of the default Podman machine, starting the machine when
+        it is not running yet.
+
+        Returns:
+            The path to the socket.
+
+        Raises:
+            FileNotFoundError: If no engine endpoint became reachable.
+        """
+        env_host = os.environ.get("DOCKER_HOST")
+        if env_host:
+            return env_host
+
+        docker_desktop = Path.home() / ".docker" / "run" / "docker.sock"
+        if docker_desktop.exists():
+            return str(docker_desktop)
+
+        socket_path = self._podman_machine_socket()
+        if socket_path:
+            return socket_path
+
+        logger.info(
+            "No active Docker/Podman socket found. Starting the Podman machine..."
+        )
+        self._bring_up_podman_machine()
+        socket_path = self._podman_machine_socket()
+        if socket_path:
+            return socket_path
+
+        raise FileNotFoundError(
+            "No Docker or Podman API endpoint is reachable. The Podman"
+            " machine could not be started. Try running `podman machine"
+            " start` in a terminal for details."
+        )
+
+    def _run_podman(self, args: list[str], timeout: float) -> tuple[bool, str]:
+        """Run one podman command and return (ok, combined output)."""
+        try:
+            completed = subprocess.run(
+                ["podman", *args],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return False, str(exc)
+        output = (completed.stdout or "") + (completed.stderr or "")
+        return completed.returncode == 0, output.strip()
+
+    def _wait_for_pipe(self, timeout: float) -> str | None:
+        """Poll the known engine pipes, returning the first reachable one."""
+        deadline = time.monotonic() + timeout
+        while True:
+            for pipe in WINDOWS_PIPE_CANDIDATES:
+                if self._check_pipe(pipe):
+                    return pipe
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(1.0)
+
+    def _bring_up_podman_machine(self) -> str | None:
+        """Start the Podman machine, initializing it first when missing.
+
+        Returns:
+            None on success, or a human-readable failure description
+            combining the outputs of the commands that failed.
+        """
+        ok, output = self._run_podman(
+            ["machine", "start"], PODMAN_COMMAND_TIMEOUT_S
+        )
+        if ok:
+            return None
+        # The machine may already be running with its endpoint still
+        # missing; give it a short grace period before reconfiguring.
+        if self._wait_for_pipe(10.0):
+            return None
+        ok, init_output = self._run_podman(
+            ["machine", "init"], PODMAN_COMMAND_TIMEOUT_S
+        )
+        if not ok:
+            return (
+                "`podman machine start` failed: "
+                + output[-400:]
+                + " | `podman machine init` failed: "
+                + init_output[-400:]
+            )
+        ok, output = self._run_podman(["machine", "start"], PODMAN_COMMAND_TIMEOUT_S)
+        if not ok:
+            return "`podman machine start` failed: " + output[-400:]
+        return None
+
+    def _podman_machine_socket(self) -> str | None:
+        """Return the default machine's Unix socket path, if it exists."""
+        ok, output = self._run_podman(["machine", "inspect"], 30.0)
+        if not ok:
+            return None
+        try:
+            machines = json.loads(output)
+            for machine in machines:
+                connection = machine.get("ConnectionInfo") or {}
+                for key in ("DockerSocket", "PodmanSocket"):
+                    raw = (connection.get(key) or {}).get("Path")
+                    if raw and Path(str(raw)).exists():
+                        return str(raw)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return None
+        return None
 
     def _check_pipe(self, pipe: str) -> bool:
         try:
@@ -251,7 +363,7 @@ class DockerClient:
             return response
 
         try:
-            logger.debug(
+            wire_logger.debug(
                 "Request: %s %s\nHeaders: %s",
                 method,
                 endpoint,

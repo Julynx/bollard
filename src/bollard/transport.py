@@ -30,14 +30,14 @@ class NpipeSocket:
             OSError: If an OS error occurs.
         """
         start_time = time.time()
-        logger = logging.getLogger("bollard.transport")
+        wire_logger = logging.getLogger("bollard.wire")
 
-        logger.debug("Attempting to connect to named pipe: %s", address)
+        wire_logger.debug("Attempting to connect to named pipe: %s", address)
         while True:
             try:
                 file_descriptor = os.open(address, os.O_RDWR | os.O_BINARY)
                 self._handle = os.fdopen(file_descriptor, "r+b", buffering=0)
-                logger.debug("Successfully connected to named pipe: %s", address)
+                wire_logger.debug("Successfully connected to named pipe: %s", address)
                 break
 
             except FileNotFoundError:
@@ -119,9 +119,9 @@ class UnixHttpConnection(http.client.HTTPConnection):
         self.socket_path = socket_path
 
     def connect(self) -> None:
-        logger = logging.getLogger("bollard.transport")
+        wire_logger = logging.getLogger("bollard.wire")
 
-        logger.debug("Connecting to socket path: %s", self.socket_path)
+        wire_logger.debug("Connecting to socket path: %s", self.socket_path)
         if hasattr(socket, "AF_UNIX"):
             self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.sock.connect(self.socket_path)

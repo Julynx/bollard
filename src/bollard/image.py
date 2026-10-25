@@ -263,7 +263,7 @@ class Image(DockerResource):
             headers["X-Registry-Auth"] = encoded_auth
 
         conn = UnixHttpConnection(client.socket_path)
-        logger.debug("POST /images/%s/push", image)
+        logging.getLogger("bollard.wire").debug("POST /images/%s/push", image)
         conn.request("POST", f"/images/{image}/push", headers=headers)
         response = conn.getresponse()
 
