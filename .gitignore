@@ -20,3 +20,4 @@ wheels/
 # IDEs
 .vscode
 .idea
+.env

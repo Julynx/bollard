@@ -1,6 +1,7 @@
 """Container module. Provides the Container class for managing Docker containers."""
 
 import base64
+import copy
 import json
 import logging
 import os
@@ -211,32 +212,40 @@ class Container(DockerResource):
         image: str,
         name: str | None,
     ) -> "Container":
-        try:
-            create_res = client._request("POST", endpoint, body=payload)
-        except DockerException as e:
-            if "404" in str(e):
-                logger.info("Image '%s' not found, pulling...", image)
-
-                Image.pull(client, image)
-                logger.info("Image pulled successfully. Retrying container creation...")
-                create_res = client._request("POST", endpoint, body=payload)
-            else:
-                raise e
-
-        container_id: str = create_res["Id"]
-
+        container_id = cls._create_with_pull(client, endpoint, payload, image)
         try:
             logger.info("Starting container %s...", container_id[:12])
             client._request("POST", f"/containers/{container_id}/start")
-        except Exception as e:
-            logger.error(
-                "Failed to start container %s: %s. Cleaning up...", container_id[:12], e
-            )
-            try:
-                client._request("DELETE", f"/containers/{container_id}?force=true")
-            except Exception:
-                pass
-            raise e
+        except DockerException as e:
+            if cls._is_cgroup_limit_error(e):
+                logger.warning(
+                    "The engine rejected the container's resource limits"
+                    " (rootless cgroup delegation). Retrying without them...",
+                )
+                cls._cleanup(client, container_id)
+                payload = cls._without_resource_limits(payload)
+                container_id = cls._create_with_pull(
+                    client, endpoint, payload, image
+                )
+                try:
+                    client._request("POST", f"/containers/{container_id}/start")
+                except Exception as retry_error:
+                    logger.error(
+                        "Failed to start the limited-retry container %s: %s."
+                        " Cleaning up...",
+                        container_id[:12],
+                        retry_error,
+                    )
+                    cls._cleanup(client, container_id)
+                    raise retry_error
+            else:
+                logger.error(
+                    "Failed to start container %s: %s. Cleaning up...",
+                    container_id[:12],
+                    e,
+                )
+                cls._cleanup(client, container_id)
+                raise e
 
         container = cls(
             client,
@@ -251,6 +260,58 @@ class Container(DockerResource):
         except Exception:
             pass
         return container
+
+    @classmethod
+    def _create_with_pull(
+        cls,
+        client: "DockerClient",
+        endpoint: str,
+        payload: dict[str, Any],
+        image: str,
+    ) -> str:
+        """Create the container, pulling the image first when missing."""
+        try:
+            create_res = client._request("POST", endpoint, body=payload)
+        except DockerException as e:
+            if "404" in str(e):
+                logger.info("Image '%s' not found, pulling...", image)
+
+                Image.pull(client, image)
+                logger.info("Image pulled successfully. Retrying container creation...")
+                create_res = client._request("POST", endpoint, body=payload)
+            else:
+                raise e
+        return str(create_res["Id"])
+
+    @staticmethod
+    def _cleanup(client: "DockerClient", container_id: str) -> None:
+        try:
+            client._request("DELETE", f"/containers/{container_id}?force=true")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _is_cgroup_limit_error(exc: Exception) -> bool:
+        """Whether the runtime refused a resource limit at start.
+
+        Rootless engines without full cgroup v2 delegation (Podman
+        machines in WSL, for example) fail writes to `memory.max` or
+        `pids.max` with a "No such file or directory" runtime error.
+        """
+        text = str(exc)
+        return "for writing: No such file or directory" in text and (
+            "memory.max" in text or "pids.max" in text
+        )
+
+    @staticmethod
+    def _without_resource_limits(payload: dict[str, Any]) -> dict[str, Any]:
+        """Copy the payload without the cgroup-dependent ceilings."""
+        stripped = copy.deepcopy(payload)
+        host_config = stripped.get("HostConfig")
+        if isinstance(host_config, dict):
+            host_config.pop("Memory", None)
+            host_config.pop("PidsLimit", None)
+        return stripped
 
     def reload(self) -> None:
         """Refresh this object's data from the server."""
