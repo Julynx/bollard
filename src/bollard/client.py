@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Generator, Literal, overload
 
-from .const import DEFAULT_TIMEOUT, PIPE_WAIT_TIMEOUT_S, PODMAN_COMMAND_TIMEOUT_S
-from .const import WINDOWS_PIPE_CANDIDATES
+from .const import DEFAULT_TIMEOUT, PIPE_WAIT_TIMEOUT_S, WINDOWS_PIPE_CANDIDATES
 from .exceptions import DockerException
 from .models import Container, Image, Network, Volume
 from .transport import UnixHttpConnection
@@ -167,8 +166,12 @@ class DockerClient:
             " start` in a terminal for details."
         )
 
-    def _run_podman(self, args: list[str], timeout: float) -> tuple[bool, str]:
-        """Run one podman command and return (ok, combined output)."""
+    def _run_podman(self, args: list[str], timeout: float | None = None) -> tuple[bool, str]:
+        """Run one podman command and return (ok, combined output).
+
+        No timeout is enforced by default: machine start can take as
+        long as it takes on slow machines. Callers may pass one.
+        """
         try:
             completed = subprocess.run(
                 ["podman", *args],
@@ -202,18 +205,14 @@ class DockerClient:
             None on success, or a human-readable failure description
             combining the outputs of the commands that failed.
         """
-        ok, output = self._run_podman(
-            ["machine", "start"], PODMAN_COMMAND_TIMEOUT_S
-        )
+        ok, output = self._run_podman(["machine", "start"])
         if ok:
             return None
         # The machine may already be running with its endpoint still
         # missing; give it a short grace period before reconfiguring.
         if self._wait_for_pipe(10.0):
             return None
-        ok, init_output = self._run_podman(
-            ["machine", "init"], PODMAN_COMMAND_TIMEOUT_S
-        )
+        ok, init_output = self._run_podman(["machine", "init"])
         if not ok:
             return (
                 "`podman machine start` failed: "
@@ -221,14 +220,14 @@ class DockerClient:
                 + " | `podman machine init` failed: "
                 + init_output[-400:]
             )
-        ok, output = self._run_podman(["machine", "start"], PODMAN_COMMAND_TIMEOUT_S)
+        ok, output = self._run_podman(["machine", "start"])
         if not ok:
             return "`podman machine start` failed: " + output[-400:]
         return None
 
     def _podman_machine_socket(self) -> str | None:
         """Return the default machine's Unix socket path, if it exists."""
-        ok, output = self._run_podman(["machine", "inspect"], 30.0)
+        ok, output = self._run_podman(["machine", "inspect"])
         if not ok:
             return None
         try:

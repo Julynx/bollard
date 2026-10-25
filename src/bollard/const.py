@@ -5,9 +5,6 @@ Constants for the Bollard library.
 # Default timeout for Docker operations (in seconds)
 DEFAULT_TIMEOUT = 10
 
-# Timeout for one podman machine command (start, init, inspect)
-PODMAN_COMMAND_TIMEOUT_S = 300.0
-
 # How long to wait for an engine endpoint to appear after a machine start
 PIPE_WAIT_TIMEOUT_S = 60.0
 

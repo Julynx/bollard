@@ -56,7 +56,7 @@ def test_windows_discovery_starts_a_stopped_machine(monkeypatch):
     client.socket_path = ""
     state = {"started": False}
 
-    def fake_run_podman(args, timeout):
+    def fake_run_podman(args, timeout=None):
         calls.append(args)
         if tuple(args) == ("machine", "start"):
             state["started"] = True
@@ -79,7 +79,7 @@ def test_windows_discovery_initializes_a_missing_machine(monkeypatch):
     client.socket_path = ""
     state = {"starts": 0}
 
-    def fake_run_podman(args, timeout):
+    def fake_run_podman(args, timeout=None):
         calls.append(args)
         key = tuple(args)
         if key == ("machine", "start"):
@@ -123,7 +123,7 @@ def test_bring_up_initializes_only_after_start_fails(monkeypatch):
     }
     counters = {key: 0 for key in outcomes}
 
-    def fake_run_podman(args, timeout):
+    def fake_run_podman(args, timeout=None):
         key = tuple(args)
         results = outcomes[key]
         result = results[min(counters[key], len(results) - 1)]
@@ -144,7 +144,7 @@ def test_bring_up_reports_combined_failures(monkeypatch):
     monkeypatch.setattr(
         client,
         "_run_podman",
-        lambda args, timeout: (False, f"{args[-1]} broke"),
+        lambda args, timeout=None: (False, f"{args[-1]} broke"),
         raising=True,
     )
     monkeypatch.setattr(client, "_wait_for_pipe", lambda timeout: None)
@@ -178,7 +178,10 @@ def test_macos_discovery_finds_the_machine_socket(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        client, "_run_podman", lambda args, timeout: (True, inspect), raising=True
+        client,
+        "_run_podman",
+        lambda args, timeout=None: (True, inspect),
+        raising=True,
     )
     monkeypatch.setattr(Path, "exists", lambda self: str(self) == str(socket_path))
     assert client._discover_macos_socket() == str(socket_path)
@@ -205,3 +208,4 @@ def test_run_podman_returns_combined_output(monkeypatch):
 def test_windows_discovery_reuses_bollard_candidates():
     assert DOCKER_PIPE in WINDOWS_PIPE_CANDIDATES
     assert PODMAN_PIPE in WINDOWS_PIPE_CANDIDATES
+
