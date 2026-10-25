@@ -6,12 +6,41 @@ logic is exercised.
 """
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from bollard import DockerClient
 from bollard.const import WINDOWS_PIPE_CANDIDATES
+
+DOCKER_PIPE = "\\\\.\\pipe\\docker_engine"
+PODMAN_PIPE = "\\\\.\\pipe\\podman-machine-default"
+
+
+@pytest.fixture(autouse=True)
+def _restore_path():
+    """Keep the PATH mutations of the ssh-keygen tests contained."""
+    saved = os.environ.get("PATH")
+    yield
+    if saved is None:
+        os.environ.pop("PATH", None)
+    else:
+        os.environ["PATH"] = saved
+
+
+def fake_windows_which(name, path=None):
+    """A PATH-resolving `shutil.which` stand-in for ssh-keygen on Windows."""
+    if name != "ssh-keygen":
+        return None
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry:
+            continue
+        candidate = Path(entry) / "ssh-keygen.exe"
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 DOCKER_PIPE = "\\\\.\\pipe\\docker_engine"
 PODMAN_PIPE = "\\\\.\\pipe\\podman-machine-default"
@@ -238,4 +267,74 @@ def test_run_podman_returns_combined_output(monkeypatch):
 def test_windows_discovery_reuses_bollard_candidates():
     assert DOCKER_PIPE in WINDOWS_PIPE_CANDIDATES
     assert PODMAN_PIPE in WINDOWS_PIPE_CANDIDATES
+
+
+def make_openssh_dir(monkeypatch) -> str:
+    """Isolate the OpenSSH location probing inside empty temp dirs.
+
+    Also empties PATH so the fake `which` only sees what each test
+    puts there, never the real machine's ssh-keygen.
+    """
+    root = Path(tempfile.mkdtemp(prefix="syna-ssh-"))
+    windows = root / "Windows"
+    openssh = windows / "System32" / "OpenSSH"
+    openssh.mkdir(parents=True)
+    monkeypatch.setenv("SystemRoot", str(windows))
+    monkeypatch.setenv("ProgramFiles", str(root / "Program Files"))
+    monkeypatch.setenv("ProgramFiles(x86)", str(root / "Program Files (x86)"))
+    monkeypatch.setenv("LOCALAPPDATA", str(root / "Local"))
+    monkeypatch.setenv("PATH", "")
+    return str(openssh)
+
+
+def test_ssh_keygen_on_path_needs_nothing(monkeypatch):
+    openssh_dir = make_openssh_dir(monkeypatch)
+    Path(openssh_dir, "ssh-keygen.exe").write_text("")
+    monkeypatch.setenv("PATH", openssh_dir)
+    monkeypatch.setattr("bollard.client.shutil.which", fake_windows_which)
+    client = DockerClient.__new__(DockerClient)
+    client._conn = None
+    client.socket_path = ""
+    assert client._ensure_ssh_keygen() is None
+
+
+def test_ssh_keygen_found_off_path(monkeypatch):
+    openssh_dir = make_openssh_dir(monkeypatch)
+    Path(openssh_dir, "ssh-keygen.exe").write_text("")
+    monkeypatch.setattr("bollard.client.shutil.which", fake_windows_which)
+    client = DockerClient.__new__(DockerClient)
+    client._conn = None
+    client.socket_path = ""
+    note = client._ensure_ssh_keygen()
+    assert note is None, "an existing but off-PATH ssh-keygen is picked up"
+    assert openssh_dir.casefold() in os.environ["PATH"].casefold()
+
+
+def test_ssh_keygen_enabled_through_windows_capability(monkeypatch):
+    openssh_dir = make_openssh_dir(monkeypatch)
+    monkeypatch.setattr("bollard.client.shutil.which", fake_windows_which)
+
+    def fake_enable():
+        Path(openssh_dir, "ssh-keygen.exe").write_text("")
+
+    monkeypatch.setattr(
+        DockerClient, "_enable_windows_openssh", lambda self: fake_enable()
+    )
+    client = DockerClient.__new__(DockerClient)
+    client._conn = None
+    client.socket_path = ""
+    assert client._ensure_ssh_keygen() is None
+    assert openssh_dir.casefold() in os.environ["PATH"].casefold()
+
+
+def test_ssh_keygen_unfixable_reports_clear_error(monkeypatch):
+    make_openssh_dir(monkeypatch)
+    monkeypatch.setattr("bollard.client.shutil.which", fake_windows_which)
+    monkeypatch.setattr(DockerClient, "_enable_windows_openssh", lambda self: None)
+    client = DockerClient.__new__(DockerClient)
+    client._conn = None
+    client.socket_path = ""
+    note = client._ensure_ssh_keygen()
+    assert note is not None
+    assert "OpenSSH" in note
 

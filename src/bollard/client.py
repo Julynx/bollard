@@ -7,6 +7,7 @@ import http.client
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -166,15 +167,13 @@ class DockerClient:
             " start` in a terminal for details."
         )
 
-    def _run_podman(self, args: list[str], timeout: float | None = None) -> tuple[bool, str]:
-        """Run one podman command and return (ok, combined output).
-
-        No timeout is enforced by default: machine start can take as
-        long as it takes on slow machines. Callers may pass one.
-        """
+    def _run_process(
+        self, command: list[str], timeout: float | None = None
+    ) -> tuple[bool, str]:
+        """Run one command and return (ok, combined output)."""
         try:
             completed = subprocess.run(
-                ["podman", *args],
+                command,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -186,6 +185,16 @@ class DockerClient:
             return False, str(exc)
         output = (completed.stdout or "") + (completed.stderr or "")
         return completed.returncode == 0, output.strip()
+
+    def _run_podman(
+        self, args: list[str], timeout: float | None = None
+    ) -> tuple[bool, str]:
+        """Run one podman command and return (ok, combined output).
+
+        No timeout is enforced by default: machine start can take as
+        long as it takes on slow machines. Callers may pass one.
+        """
+        return self._run_process(["podman", *args], timeout=timeout)
 
     def _wait_for_pipe(self, timeout: float) -> str | None:
         """Poll the known engine pipes, returning the first reachable one."""
@@ -209,6 +218,9 @@ class DockerClient:
             None on success, or a human-readable failure description
             combining the outputs of the commands that failed.
         """
+        ssh_note = self._ensure_ssh_keygen()
+        if ssh_note:
+            return ssh_note
         ok, output = self._run_podman(["machine", "start"])
         if ok:
             return None
@@ -248,6 +260,99 @@ class DockerClient:
             return len(json.loads(output)) > 0
         except (json.JSONDecodeError, TypeError):
             return False
+
+    def _ensure_ssh_keygen(self) -> str | None:
+        """Make ssh-keygen reachable, as `podman machine init` needs it.
+
+        On Windows the OpenSSH client is an optional feature: when it is
+        enabled its directory is usually on PATH, but it may also exist
+        off-PATH, or be disabled entirely. Probe the known locations,
+        and as a last resort enable the built-in feature (through the
+        UAC prompt when required).
+
+        Returns:
+            None when ssh-keygen is available, else a failure note.
+        """
+        if shutil.which("ssh-keygen"):
+            return None
+        if sys.platform != "win32":
+            return None
+        for directory in self._windows_openssh_dirs():
+            if Path(directory, "ssh-keygen.exe").exists():
+                self._prepend_path(directory)
+                break
+        if shutil.which("ssh-keygen"):
+            logger.info("Using ssh-keygen from an off-PATH OpenSSH directory.")
+            return None
+        logger.info("ssh-keygen not found; enabling the Windows OpenSSH client...")
+        self._enable_windows_openssh()
+        for directory in self._windows_openssh_dirs():
+            if Path(directory, "ssh-keygen.exe").exists():
+                self._prepend_path(directory)
+                break
+        if shutil.which("ssh-keygen"):
+            return None
+        return (
+            "podman needs the Windows OpenSSH client (ssh-keygen) to create"
+            " its machine, and enabling it did not work. Install the"
+            " 'OpenSSH Client' optional feature in Windows Settings"
+            " (Apps > Optional features), then try again."
+        )
+
+    def _windows_openssh_dirs(self) -> list[str]:
+        """Directories where Windows and Git ship ssh-keygen.exe."""
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        program_files_x86 = os.environ.get(
+            "ProgramFiles(x86)", r"C:\Program Files (x86)"
+        )
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        directories = [
+            os.path.join(system_root, "System32", "OpenSSH"),
+            os.path.join(program_files, "OpenSSH"),
+            os.path.join(program_files_x86, "OpenSSH"),
+        ]
+        if local_app_data:
+            directories.append(
+                os.path.join(local_app_data, "Programs", "Git", "usr", "bin")
+            )
+        directories.append(os.path.join(program_files, "Git", "usr", "bin"))
+        return directories
+
+    def _prepend_path(self, directory: str) -> None:
+        """Make a directory visible to the podman subprocesses."""
+        current = os.environ.get("PATH", "")
+        if directory.casefold() not in {
+            entry.casefold() for entry in current.split(os.pathsep)
+        }:
+            os.environ["PATH"] = directory + os.pathsep + current
+
+    def _enable_windows_openssh(self) -> None:
+        """Enable the built-in OpenSSH client, best-effort.
+
+        The plain call needs an elevated shell; when it is rejected, the
+        same command is relaunched through the UAC prompt so the user
+        only has to click 'Yes'.
+        """
+        command = "Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0"
+        self._run_process(["powershell", "-NoProfile", "-Command", command])
+        if shutil.which("ssh-keygen"):
+            return
+        elevated = (
+            "Start-Process powershell -Verb RunAs -Wait -ArgumentList"
+            " '-NoProfile','-Command','" + command + "'"
+        )
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", elevated],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def _podman_machine_socket(self) -> str | None:
         """Return the default machine's Unix socket path, if it exists."""
