@@ -199,7 +199,11 @@ class DockerClient:
             time.sleep(1.0)
 
     def _bring_up_podman_machine(self) -> str | None:
-        """Start the Podman machine, initializing it first when missing.
+        """Start the Podman machine, initializing or restarting as needed.
+
+        A failed start means either a missing machine (initialize one
+        and start it) or a registered machine whose endpoint never came
+        up (restart it, since `start` refuses to run twice).
 
         Returns:
             None on success, or a human-readable failure description
@@ -212,6 +216,16 @@ class DockerClient:
         # missing; give it a short grace period before reconfiguring.
         if self._wait_for_pipe(10.0):
             return None
+        if self._machine_exists():
+            logger.info(
+                "The Podman machine exists but its endpoint is down."
+                " Restarting it..."
+            )
+            self._run_podman(["machine", "stop"])
+            ok, output = self._run_podman(["machine", "start"])
+            if ok or self._wait_for_pipe(10.0):
+                return None
+            return "`podman machine start` failed: " + output[-400:]
         ok, init_output = self._run_podman(["machine", "init"])
         if not ok:
             return (
@@ -224,6 +238,16 @@ class DockerClient:
         if not ok:
             return "`podman machine start` failed: " + output[-400:]
         return None
+
+    def _machine_exists(self) -> bool:
+        """Whether at least one Podman machine is registered."""
+        ok, output = self._run_podman(["machine", "inspect"])
+        if not ok:
+            return False
+        try:
+            return len(json.loads(output)) > 0
+        except (json.JSONDecodeError, TypeError):
+            return False
 
     def _podman_machine_socket(self) -> str | None:
         """Return the default machine's Unix socket path, if it exists."""

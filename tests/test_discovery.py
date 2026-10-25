@@ -117,24 +117,54 @@ def test_bring_up_initializes_only_after_start_fails(monkeypatch):
     client = DockerClient.__new__(DockerClient)
     client._conn = None
     client.socket_path = ""
-    outcomes = {
-        ("machine", "start"): [(False, "Error: no such machine"), (True, "")],
-        ("machine", "init"): [(True, "")],
-    }
-    counters = {key: 0 for key in outcomes}
+
+    state = {"starts": 0}
 
     def fake_run_podman(args, timeout=None):
-        key = tuple(args)
-        results = outcomes[key]
-        result = results[min(counters[key], len(results) - 1)]
-        counters[key] += 1
         calls.append(args)
-        return result
+        key = tuple(args)
+        if key == ("machine", "start"):
+            state["starts"] += 1
+            return (state["starts"] > 1, "")
+        if key == ("machine", "inspect"):
+            return (False, "no machine exists")
+        return (True, "")
 
     monkeypatch.setattr(client, "_run_podman", fake_run_podman, raising=True)
     monkeypatch.setattr(client, "_wait_for_pipe", lambda timeout: None)
     assert client._bring_up_podman_machine() is None
-    assert calls == [["machine", "start"], ["machine", "init"], ["machine", "start"]]
+    assert calls == [
+        ["machine", "start"],
+        ["machine", "inspect"],
+        ["machine", "init"],
+        ["machine", "start"],
+    ]
+
+
+def test_bring_up_restarts_a_running_machine_with_a_dead_endpoint(monkeypatch):
+    calls: list[list[str]] = []
+    client = DockerClient.__new__(DockerClient)
+    client._conn = None
+    client.socket_path = ""
+
+    state = {"starts": 0}
+
+    def fake_run_podman(args, timeout=None):
+        calls.append(args)
+        key = tuple(args)
+        if key == ("machine", "start"):
+            state["starts"] += 1
+            return (state["starts"] > 1, "")
+        if key == ("machine", "inspect"):
+            return (True, '[{"Name": "podman-machine-default"}]')
+        return (True, "")
+
+    monkeypatch.setattr(client, "_run_podman", fake_run_podman, raising=True)
+    monkeypatch.setattr(client, "_wait_for_pipe", lambda timeout: None)
+    assert client._bring_up_podman_machine() is None
+    assert ["machine", "stop"] in calls, "a dead running machine gets restarted"
+    assert calls.count(["machine", "start"]) == 2
+    assert ["machine", "init"] not in calls
 
 
 def test_bring_up_reports_combined_failures(monkeypatch):
